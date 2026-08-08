@@ -86,6 +86,8 @@ Every refusal has the shape `{"detail": {"code": …, …extra fields…}}`. On
 | `owner_grant_requires_root` | 422 | `POST …/ops` grant | `index` | yes | Authority |
 | `owner_revoke_requires_root` | 422 | `POST …/ops` revoke | `index` | yes | Authority |
 | `payload_overruns_body` | 422 | `POST …/ops` server-read classes | `index` | yes | Log |
+| `hard_prune_target_is_prune` | 422 | `POST …/ops` hard_prune | `index`, `seq` | yes | Log |
+| `hard_prune_target_not_reprised` | 422 | `POST …/ops` hard_prune | `index`, `seq` | yes | Log |
 | `prune_reprise_not_found` | 422 | `POST …/ops` prune | `index`, `reprise_op_id` | yes | Log |
 | `prune_duplicate_target` | 422 | `POST …/ops` prune | `index` | yes | Log |
 | `prune_target_already_reprised` | 422 | `POST …/ops` prune | `index`, `seq` | no | Log |
@@ -97,7 +99,10 @@ Every refusal has the shape `{"detail": {"code": …, …extra fields…}}`. On
 | `prune_target_not_found` | 422 | `POST …/ops` prune | `index`, `seq` | yes | Log |
 | `prune_targets_empty` | 422 | `POST …/ops` prune | `index` | yes | Log |
 | `prune_targets_too_many` | 422 | `POST …/ops` prune | `index` | yes | Log |
+| `member_quota_exhausted` | 402 | `POST …/ops` | `index` | no | Log |
+| `workspace_quota_exhausted` | 402 | `POST …/ops`, `PUT …/keywraps` | — | no | Log |
 | `role_forbids_op_class` | 403 | `POST …/ops` | `index`, `op_class`, `roles` | no | Authority |
+| `role_forbids_prune_type` | 403 | `POST …/ops` `0x81` | `index`, `prune_type`, `roles` | no | Authority |
 | `rotate_epoch_conflict` | 409 | `POST …/ops` rotate | `index`, `from_epoch`, `expected_from_epoch` | no | Keys |
 | `rotate_not_materialised` | 409 | `PUT …/keywraps` | `epoch` | no | Keys |
 | `store_unavailable` | 503 | `GET /health/db` | — | no | Compat |
@@ -114,6 +119,7 @@ Every refusal has the shape `{"detail": {"code": …, …extra fields…}}`. On
 | `unsupported_control_type` | 422 | `POST …/ops` control | `index`, `type` | yes | Authority |
 | `unsupported_ext_binding_type` | 422 | `POST …/ops` ext_binding | `index`, `type` | yes | Log |
 | `unsupported_op_class` | 422 | `POST …/ops` | `index` | yes | Log |
+| `unsupported_prune_type` | 422 | `POST …/ops` `0x81` | `index`, `type` | yes | Log |
 | `unsupported_suite` | 422 | `POST …/ops` | `index` | yes | Log |
 | `vault_fetch_rate_limited` | 429 | `GET …/vault` | `retry_after_seconds` | no | Keys |
 | `vault_requires_genesis` | 403 | `PUT …/vault` first write | — | yes | Identity |
@@ -163,6 +169,8 @@ client's response is identical either way.
 | `no_registration` vs `no_live_grant` | *you are not a member here* needs a registration; *you have no permission* needs a grant |
 | `workspace_not_reachable` vs `no_registration` | *that id is not yours to found* versus *you have not been let in* |
 | `admission_refused` vs `workspace_not_created` | *you may not found one* is for the operator; *that one does not exist yet* is a client ordering bug |
+| `workspace_quota_exhausted` vs `member_quota_exhausted` | *this Workspace is full* is everyone's problem and everyone's fold; *you have written too much* is one author's |
+| `member_quota_exhausted` vs `member_challenge_rate_limited` | one is a ceiling and waiting never clears it; the other clears itself in `retry_after_seconds` |
 
 ## One code with two occasions
 

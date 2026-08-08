@@ -90,11 +90,11 @@ Read them in this order. Each one only depends on the ones above it.
 
 Reference material, extracted so the narrative does not carry it:
 
-- [Refusal codes](reference/refusal-codes.md) — all 111, with status, cause and whether a retry can help
+- [Refusal codes](reference/refusal-codes.md) — all 117, with status, cause and whether a retry can help
 - [Glossary](reference/glossary.md) — every term, defined once
 - [Retained state](reference/retained-state.md) — what a server must remember
 - [Profile obligations](reference/profile-obligations.md) — the eleven decisions a deployment must make
-- [Conformance](../conformance/checklist.yaml) — 181 machine-readable items
+- [Conformance](../conformance/checklist.yaml) — 194 machine-readable items
 
 ---
 
@@ -185,6 +185,7 @@ error shape — a client that branches on `detail.code` never meets a bare strin
 | `200` | Success — or an idempotent repeat of something already done |
 | `201` | Something was created |
 | `401` | The credential is missing, expired, or of the wrong kind |
+| `402` | The Workspace has consumed its allowance; waiting will not help |
 | `403` | The credential is fine; it does not permit this |
 | `404` | No such thing, or no such contract version |
 | `409` | A state conflict — re-read and decide again |
@@ -263,8 +264,10 @@ Ordering lives inside the payload, which the server never reads.
 If you remember nothing else, remember these. Every rule in every layer serves
 one of them.
 
-**The log is append-only and never edited.** Nothing is deleted or rewritten.
-Reprising an op hides it from ordinary reads; the bytes stay.
+**The log is append-only and never edited.** No op is ever rewritten, no signature
+breaks, no position moves. Reprising an op hides it from ordinary reads; a
+`hard_prune` op can later destroy those hidden bytes, and only those — the server
+never deletes on its own initiative, only what a signed op in the log instructed.
 
 **The server never reads content.** It reads envelope headers, and the bodies of
 exactly two op classes — the two it must act on. Nothing else, ever.
@@ -306,6 +309,7 @@ changed the system into something else:
 - interpreting, validating or indexing application content
 - merging or ordering entity state — that is entirely the client's
 - remembering what any device has read
-- deleting anything
+- deleting anything a signed `hard_prune` op did not name
+- retention policy, scheduled reclamation, or any deletion it decided on its own
 - holding any key that opens any envelope, wrap or vault record
 - notifications, scheduled work, or any background process at all

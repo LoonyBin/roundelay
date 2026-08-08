@@ -44,23 +44,35 @@ explicit decision to break the devices that still speak it — never a milestone
 reached automatically, because the fleet never stops producing an old shape on its
 own.
 
-### The one exception that was taken
+### `v1` is unfrozen until it is deployed
 
-This specification's `v1` was **rewritten in place, once**, before any deployment
-existed — when the identity provider was removed and a Root keypair became the
-identity. Routes and a whole credential kind disappeared without a deprecation
-period. There were no peers, so no device was broken.
+**[S]** Everything above binds a version **that some device speaks**. Until the first
+deployment exists, `v1` may be **rewritten in place**, without deprecation and without
+a compatibility shim, because the set of devices speaking the old shape is empty and
+breaking none of them is not a compromise.
 
-**[S]** That is the complete list of exceptions. From that point the rule above
-applies without one, and a second in-place rewrite of a served version is a fork,
-not a decision available to a maintainer.
+**[S]** That licence ends at the first deployment, permanently and for every later
+version. From that moment an in-place rewrite of a served version is a **fork**, not a
+decision available to a maintainer.
 
-> Recorded because an undocumented exception is indistinguishable from a precedent.
-> Someone will find that `v1` once changed shape and reason that it may again — and
-> they will find it under deadline, which is exactly when this rule is worth the most
-> and defended the least. The circumstance that made it safe was that the set of
-> devices speaking the old shape was **empty**, and that circumstance is not
-> recoverable.
+Taken so far, while the set was empty:
+
+```
+   the identity provider removed, a Root keypair became the identity
+        routes and a whole credential kind deleted outright
+   holder_root_pk became holder_ref, 32 opaque bytes
+   reprise moved 0x04 → 0x02, and reserved class 0x03 was dropped
+   0x81 gained a payload type, and hard_prune with it
+```
+
+> Recorded because an undocumented exception is indistinguishable from a precedent,
+> and a list of four is more honest than a claim of one. Someone will find that `v1`
+> changed shape and reason that it may again — under deadline, which is exactly when
+> this rule is worth the most and defended the least.
+>
+> So the test is not *how many times has this happened*. It is the single question
+> **is the set of devices speaking the old shape empty**, which is answerable, and
+> which becomes permanently and irreversibly "no" on the day something ships.
 
 ---
 
@@ -207,12 +219,10 @@ fails closed.
 | Set | v1 |
 |---|---|
 | suites | `0x00` plaintext, `0x01` encrypted |
-| op classes | `0x01` content, `0x04` reprise, `0x80` control, `0x81` prune, `0xBF` ext_binding |
+| op classes | `0x01` content, `0x02` reprise, `0x80` control, `0x81` prune, `0xBF` ext_binding |
 | control types | `workspace_genesis`, `member_register`, `grant`, `revoke`, `delegate`, `revoke_delegation`, `root_handover`, `rotate` |
+| prune types | `prune`, `hard_prune` |
 | ext_binding types | `bind`, `unbind` |
-
-**[W]** Op class **`0x03` is reserved** — claimed for a future core assignment,
-and refused until something claims it properly.
 
 **[W]** Two ranges of the class byte are **not** core-assigned and so are not part
 of this table — see [The Log](01-the-log.md#3-the-class-byte):

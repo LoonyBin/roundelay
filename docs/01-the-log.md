@@ -140,8 +140,7 @@ class with bit 7 clear is opaque, for ever, by construction.
   class   name          reads?   what it is
   ─────   ───────────   ──────   ─────────────────────────────────
    0x01   content         ✗      ordinary application data
-   0x03   (reserved)      —      claimed for a future core assignment
-   0x04   reprise         ✗      restates the ops it replaces  → §7
+   0x02   reprise         ✗      restates the ops it replaces  → §7
    0x80   control         ✓      who exists, who may write  → Authority
    0x81   prune           ✓      "these ops are reprised"
    0xBF   ext_binding     ✓      binds one extension class to a name
@@ -186,10 +185,10 @@ open** — it has to *act* on those payloads. In v1 that set is exactly `{0x00}`
 Bit 7 decides how the server **handles** an op. Within a quadrant, the value
 decides **who may author one** — and nothing else.
 
-**[S]** `0x01` and `0x04` are indistinguishable to the server: same handling, same
+**[S]** `0x01` and `0x02` are indistinguishable to the server: same handling, same
 storage, same prune eligibility, same read filter. They differ in exactly one
-code path, `role_forbids_op_class`, and that is the whole reason `0x04` exists.
-A profile can withhold `0x04` from a role that holds `0x01`, or the reverse.
+code path, `role_forbids_op_class`, and that is the whole reason `0x02` exists.
+A profile can withhold `0x02` from a role that holds `0x01`, or the reverse.
 
 > This is worth stating plainly because the names mislead. "Content" and
 > "reprise" sound like a taxonomy of meaning, and to the server they are not:
@@ -692,7 +691,7 @@ new.
 
 Over time a Workspace accumulates ops that no longer matter individually: a
 hundred edits to one record, when only the result is interesting. A **reprise** —
-a `0x04` op — states their combined effect again, in one op. **Prune** — a `0x81`
+a `0x02` op — states their combined effect again, in one op. **Prune** — a `0x81`
 op — then says which ops that reprise replaces.
 
 **A reprise says the same thing again; it never says something new.** Two motives
@@ -714,30 +713,41 @@ lead there, and the core distinguishes neither:
    before      1  2  3  4  5  6  7          all seven still needed
                                             to reconstruct the record
 
-   reprise     1  2  3  4  5  6  7  8       8 = class 0x04, holds the fold
+   reprise     1  2  3  4  5  6  7  8       8 = class 0x02, holds the fold
                                      ▲
    prune       1  2  3  4  5  6  7  8  9    9 = class 0x81, "8 reprises 2,3,5,6"
                ▓     ▓     ▓  ▓             ▓ = marked, hidden from normal reads
                                             — but still stored, and still fetchable
 ```
 
-**[S]** **Nothing is ever deleted.** A pruned op is marked; the default read hides
-it; `include_reprised=true` serves it back.
+**[S]** A prune **deletes nothing.** The named op is marked; the default read hides
+it; `include_reprised=true` serves it back. Destroying the bytes is a **second,
+separate op** — `hard_prune`, below — which can only ever target an op a prune has
+already marked.
 
-> Soft-to-hard is an easy change later and the reverse is impossible, so v1 does
-> the reversible thing.
+> Two steps because the reverse order is impossible. A soft mark is recoverable, a
+> destroyed byte is not, so the recoverable step goes first and always lands first.
 
 ### The prune payload
 
-**[W]** `0x81` bodies are unencrypted JSON:
+**[W]** `0x81` bodies are unencrypted JSON, and every one is **self-identifying**:
 
 ```json
-{"reprise": {"op_id": "<uuid>"},
+{"type": "prune",
+ "reprise": {"op_id": "<uuid>"},
  "targets": [{"seq": 2,
               "author_member_id": "<uuid>",
               "author_seq": 7,
               "envelope_hash": "<hex64>"}]}
 ```
+
+**[W]** `type` is **mandatory in every `0x81` payload, for ever**, and an unknown
+value is refused `unsupported_prune_type`. Two types in v1: `prune` and `hard_prune`.
+
+> Same rule as `0x80`, for a related reason. A payload that has to be *inferred* from
+> which fields are present is one that two implementations will infer differently the
+> first time a field becomes optional — and here the two types differ by whether bytes
+> survive.
 
 Why a target is more than a position: a reprise removes ops from the *middle* of
 each contributing author's chain, not from the front.
@@ -768,6 +778,86 @@ bytes are held:
 > Duplicates are refused at decode so that a later rowcount check has exactly one
 > remaining explanation — a concurrent prune. Otherwise a race and a malformed
 > payload become indistinguishable.
+
+### `hard_prune`: reclaiming the bytes
+
+A reprised op still occupies disk. It is invisible to every ordinary read and to
+every device that enrols after it, and it is charged for like anything else. A
+`hard_prune` says: **those bytes may go.**
+
+**[W]** Same class, same target shape, no reprise of its own:
+
+```json
+{"type": "hard_prune",
+ "targets": [{"seq": 2,
+              "author_member_id": "<uuid>",
+              "author_seq": 7,
+              "envelope_hash": "<hex64>"}]}
+```
+
+**[S]** The server drops the **envelope bytes** for each target and keeps a
+**tombstone**: op id, transport position, author, `author_seq`, and the position of
+the prune that reprised it. Three things depend on the tombstone surviving:
+
+```
+   uniqueness   (workspace, author, op_id) still refuses a re-append,
+                so a destroyed op cannot be resurrected as a new one
+
+   positions    seq stays stable, so every `since` cursor keeps working
+
+   audit        the gap has a name, and the op that authorised it is findable
+```
+
+> Which is also the honest limit on what is reclaimed. A tombstone is a few dozen
+> bytes and an envelope is a size class; hard-pruning recovers the payload, never the
+> row. A Workspace of a hundred million tiny ops does not shrink to nothing.
+
+**[S]** Four rules, each fail-closed:
+
+| Rule | Refusal |
+|---|---|
+| the target is already marked reprised | `hard_prune_target_not_reprised` |
+| the target is not itself a `0x81` op | `hard_prune_target_is_prune` |
+| `envelope_hash` matches the op held at that `seq` | `prune_target_attestation_mismatch` |
+| the shape rules of the prune payload, unchanged | `prune_targets_empty`, `prune_duplicate_target`, `prune_targets_too_many` |
+
+**[S]** A target whose bytes are **already gone** is not an error. It is the
+concurrent case — two folders reclaiming the same span — and it applies nothing a
+second time, exactly like a repeat.
+
+**[S]** `include_reprised=true` no longer returns a hard-pruned op. The position is
+absent from the page, and the `hard_prune` that removed it is in the log.
+
+#### Why prune ops may never be targets
+
+**[W]** Rule 2 is not tidiness. A soft prune carries `envelope_hash` for every op it
+marks, and that hash is *the only thing* that lets a verifier chain past the hole it
+created, above. Destroy the prune and every hole it authorised becomes unexplainable:
+a reader meets a gap in an author's chain with nothing to bridge it and no signed
+statement that the removal was legitimate.
+
+> So the evidence outlives the evidence's subject, deliberately. Prune ops accumulate
+> for ever and that is the price of the archive being *checkable* rather than merely
+> absent. They are small, bounded at 1000 targets each, and they are the reason a
+> hostile server still cannot quietly drop an op it dislikes: no `hard_prune` naming
+> it, no legitimate gap.
+
+#### What a hard prune costs, stated plainly
+
+**[C]** It is **irreversible**, and it is the only operation in this protocol that
+is. Everything else appends. A client MUST NOT offer it as an automatic background
+behaviour without the Workspace's own policy behind it, and MUST NOT present it as
+"cleaning up".
+
+**[S]** The server **never initiates one.** It runs no scheduled reclamation, applies
+no retention window, and deletes nothing on its own judgement — the same rule as
+everywhere else in this specification, and the reason deletion could be added here at
+all without the server becoming an actor.
+
+> Retention therefore stops being something an operator quietly configures and
+> becomes something a Workspace decides and signs. A deployment that wants a
+> permanent archive grants `hard_prune` to no role, and the archive is permanent by
+> construction rather than by promise.
 
 ### Guidance — a prune discloses a grouping
 
@@ -935,7 +1025,7 @@ all. The two named codes cover the core-assigned cases; extension classes are
 refused under the third.
 
 **[S]** The named reprise, by contrast, may be **any opaque class** — `0x01`,
-`0x04`, or a profile-defined one. The server cannot read the fold either way, so
+`0x02`, or a profile-defined one. The server cannot read the fold either way, so
 constraining its class would prove nothing beyond what the author's own signature
 already commits them to.
 
@@ -1020,6 +1110,16 @@ an error.**
 **[S]** `include_reprised=true` drops the filter and serves the whole log,
 reprised ops included — the **history view**. Same credential bar as any other
 read, and no higher.
+
+**[C]** The history view is **not a retention promise.** A `hard_prune` destroys
+reprised bytes permanently, so an op this view returns today may be absent tomorrow —
+with the `hard_prune` that removed it in the log, and its position tombstoned. A
+client that needs history to survive MUST keep its own copy. Nothing on the server
+undertakes to hold one.
+
+> Worth stating flatly because the filter name suggests otherwise. `include_reprised`
+> says *do not hide what is here*; it has never said *this is everything that was
+> ever written*, and since `hard_prune` those two readings come apart.
 
 > A prune hides history from the *sync* path so a fresh device need not replay it.
 > The user is still owed that history on request. Widening what is served is not
@@ -1153,6 +1253,123 @@ when the batch began.
 
 The complete list of what a server must remember is in [retained
 state](reference/retained-state.md).
+
+### Bounding what a Workspace consumes
+
+A deployment has finite disk and the log only grows. The core says almost nothing
+about how consumption is bounded, and exactly three things about what bounding it may
+never do.
+
+**[S]** A deployment MAY refuse a write because the Workspace has consumed its
+allowance, under `402 workspace_quota_exhausted`. It carries **no**
+`retry_after_seconds`, because waiting is not the remedy.
+
+**[S]** The refusal says nothing else. No amount, no allowance, no plan, no price, no
+URL — a deployment's commercial surface is not protocol, and a code that carried one
+would be a code every client had to parse differently per server.
+
+**[S]** It does **not** distinguish over-allowance from unpaid.
+
+> Those differ only to the operator. To a client both mean *this Workspace will not
+> accept more bytes right now*, both are handled by surfacing and not retrying, and
+> collapsing them keeps a billing relationship out of a protocol refusal.
+
+**[S]** Three things it may never gate, whatever the deployment's arrangement:
+
+| Never refused for consumption | Because |
+|---|---|
+| `GET …/ops` — reading your own log | otherwise non-payment destroys availability, and the data was never really yours |
+| every vault route → [Keys](04-keys.md) | it holds the identity's own recovery; gating it locks somebody out of their Root, unrecoverably |
+| authentication — challenge, token, refresh | a member who cannot log in cannot read either, which is the first rule wearing a hat |
+
+> This is the whole of the exit path, and it is the reason the list exists rather
+> than being left to each operator's judgement. "The server is trusted with nothing"
+> is false the moment it can be trusted with your continued payment. A deployment may
+> stop accepting your writes; it may not hold your history hostage, and it may not
+> stand between you and the key that would let you leave.
+
+**[S]** And two op classes are never refused for consumption, even when every other
+write is:
+
+| Never refused | Because |
+|---|---|
+| `0x80` control | revoking a compromised device is a security remedy. Gating it on payment makes non-payment a way to keep an attacker's grant alive |
+| `0x81` prune and `hard_prune` | it is the remedy *for this refusal*. Refusing it seals the Workspace under its own ceiling with no way back |
+
+> The second was a deadlock walked straight into: a Workspace over its allowance
+> refuses writes, the way back under the allowance is to write a `hard_prune`, and a
+> `hard_prune` is a write. The exemption is what makes the ceiling recoverable rather
+> than terminal, which was the entire argument for having one.
+
+**[S]** The exemption is narrow enough not to be a hole. Both classes are small,
+bounded, role-gated, and neither can carry application data.
+
+*Non-normative:* because **the batch is all-or-nothing** (§6), the exemption only
+helps a client that sends recovery ops in a batch of their own. A `hard_prune`
+batched alongside a content op is refused with it. Nothing breaks — the refusal is
+correct and says so — but the batch that would have freed space did not land.
+
+### Whose bytes were they
+
+**[S]** Where a deployment bounds what a single **member** may add rather than the
+Workspace as a whole, the refusal is `402 member_quota_exhausted` — a distinct code,
+because the remedy is a different one and belongs to a different person.
+
+> Collapsing the two would tell two hundred people the Workspace is out of space when
+> one runaway sync loop is the whole problem. A client can only say which happened if
+> the codes differ, and "which happened" is the only part the user can act on.
+
+**[S]** Attribution needs **no new state**. Every envelope names its author in the
+header, and `holder_ref` groups a Workspace's devices by the identity holding them
+([Authority](03-authority.md)), so per-device and per-person accounting both fall out
+of what the server already keeps. Grouping by `holder_ref` equality is the one use of
+that field the server may make — it still never interprets it, and it still authorises
+nothing.
+
+**[S]** There is **no account-level refusal**. A deployment whose allowance is pooled
+across many Workspaces — one organisation paying for forty — refuses under
+`workspace_quota_exhausted` in whichever Workspace the write landed.
+
+> The Workspace is the only thing whose bytes this protocol counts. There is no
+> account here, no payer and no billing relationship, so there is nothing else for a
+> refusal to name.
+
+**[C]** A client meeting either code MUST NOT re-attempt it **unchanged**. Neither is
+deterministic — reducing what the Workspace holds changes the answer — so a client
+SHOULD present folding and `hard_prune` as the recovery available to it (§7). The
+reason that op exists is that the alternative was a Workspace with no way back under
+a ceiling.
+
+> Which makes these the awkward pair in the retry vocabulary, and worth naming.
+> **Terminalise** is for a refusal a retry cannot change ([Compatibility](05-compatibility.md));
+> `retry_after_seconds` is for one that clears on its own. A quota is neither: waiting
+> never clears it and stopping for good is wrong, because the client can do something
+> that makes the same request succeed. Act, then retry — the one shape neither of the
+> other two describes.
+
+**[S]** Quota state is **server-side and authoritative for nothing.** It is not in
+the log, no op records it, no device derives anything from it, and a replay
+reconstructs the Workspace without it — exactly like a rate-limit counter.
+
+### Guidance — a shared Workspace is a shared fate
+
+> **Non-normative.** The core bounds nothing and requires no deployment to.
+
+A Workspace with two hundred members and no per-member bound is one where any member
+can stop the other one hundred and ninety-nine, usually by accident — a sync loop, a
+bulk import, a folder that never folds. The protocol makes that expressible and takes
+no view on it.
+
+Two things are worth deciding before it happens rather than after:
+
+- **Someone present must be able to recover.** `hard_prune` is conferred only by a
+  role entry that names it ([Authority](03-authority.md)). A deployment that bounds
+  consumption and grants it to nobody has built a ceiling with the ladder locked in
+  the operator's office.
+- **The bound and the payer are different questions.** Who pays for a Workspace is
+  out of band and invisible here; who may fill it is a role table. An organisation
+  paying for forty Workspaces still bounds each one separately, because the Workspace
+  is the only thing whose bytes this protocol can count.
 
 ---
 

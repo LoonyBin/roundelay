@@ -171,8 +171,9 @@ items:
 
 - id: CONF-WIRE-005
   requirement: >
-    Op class 0x03 is refused unsupported_op_class, as is every unassigned, undeclared
-    or unenabled value in all four quadrants; 0x01, 0x04, 0x80, 0x81 are served.
+    Op classes 0x03 and 0x04 are refused unsupported_op_class, as is every unassigned,
+    undeclared or unenabled value in all four quadrants; 0x01, 0x02, 0x80, 0x81 are
+    served.
   spec: "docs/01-the-log.md"
   subject: server
   observable: black-box
@@ -1402,6 +1403,137 @@ items:
   codes: []
   test: tests/conformance/test_discipline.py::test_no_content_parsing
 
+# ── Hard prune ───────────────────────────────────────────────────────────────
+
+- id: CONF-HARD-001
+  requirement: >
+    A 0x81 payload with no type, or an unrecognised type, is refused
+    malformed_prune_payload and unsupported_prune_type respectively; both v1 types
+    are accepted.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [malformed_prune_payload, unsupported_prune_type]
+  test: tests/conformance/test_prune.py::test_prune_type_discriminator
+
+- id: CONF-HARD-002
+  requirement: >
+    A hard_prune naming an op no landed prune has marked reprised is refused
+    hard_prune_target_not_reprised, and the op's bytes still serve under
+    include_reprised=true.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [hard_prune_target_not_reprised]
+  test: tests/conformance/test_prune.py::test_hard_prune_requires_soft_first
+
+- id: CONF-HARD-003
+  requirement: >
+    A hard_prune naming a 0x81 op is refused hard_prune_target_is_prune, so the
+    hashes that let a verifier chain past an existing hole always survive.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [hard_prune_target_is_prune]
+  test: tests/conformance/test_prune.py::test_prune_ops_are_never_targets
+
+- id: CONF-HARD-004
+  requirement: >
+    After an accepted hard_prune the target is absent from include_reprised=true, its
+    seq does not shift, every later since-cursor still resolves, and re-appending the
+    destroyed op is still refused by (workspace, author, op_id) uniqueness.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_prune.py::test_tombstone_survives_destruction
+
+- id: CONF-HARD-005
+  requirement: >
+    A hard_prune target whose bytes are already gone applies nothing and is not an
+    error; envelope_hash disagreeing with the op held at that seq is refused
+    prune_target_attestation_mismatch.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [prune_target_attestation_mismatch]
+  test: tests/conformance/test_prune.py::test_hard_prune_idempotent_and_guarded
+
+- id: CONF-HARD-006
+  requirement: >
+    A role entry naming 0x81 without payload types authors prune and is refused
+    role_forbids_prune_type on hard_prune; an entry naming hard_prune explicitly
+    authors both.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [role_forbids_prune_type]
+  test: tests/conformance/test_prune.py::test_hard_prune_needs_explicit_grant
+
+- id: CONF-HARD-007
+  requirement: >
+    The server initiates no deletion of its own: with no hard_prune in the log, every
+    reprised op still serves under include_reprised=true regardless of age.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_prune.py::test_no_server_initiated_reclamation
+
+# ── Consumption ──────────────────────────────────────────────────────────────
+
+- id: CONF-QUOTA-001
+  requirement: >
+    A deployment refusing a write for consumption answers 402
+    workspace_quota_exhausted, carries no retry_after_seconds, and exposes no
+    allowance, plan, price or URL in the detail object.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [workspace_quota_exhausted]
+  test: tests/conformance/test_quota.py::test_quota_refusal_shape
+
+- id: CONF-QUOTA-002
+  requirement: >
+    Consumption never gates the exit path: with writes refused
+    workspace_quota_exhausted, GET /v1/w/{w}/ops, every vault route, and the
+    challenge, token and refresh routes all still succeed.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [workspace_quota_exhausted]
+  test: tests/conformance/test_quota.py::test_exit_path_never_gated
+
+- id: CONF-QUOTA-003
+  requirement: >
+    With writes refused workspace_quota_exhausted, a batch containing only 0x80 control
+    ops is accepted, and so is a batch containing only 0x81 prune or hard_prune ops.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [workspace_quota_exhausted]
+  test: tests/conformance/test_quota.py::test_control_and_prune_exempt
+
+- id: CONF-QUOTA-004
+  requirement: >
+    The exemption does not survive batching: a batch mixing a hard_prune with a content
+    op is refused workspace_quota_exhausted in full, and nothing in it commits.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [workspace_quota_exhausted]
+  test: tests/conformance/test_quota.py::test_mixed_batch_still_refused
+
+- id: CONF-QUOTA-005
+  requirement: >
+    A per-member bound refuses member_quota_exhausted, distinct from
+    workspace_quota_exhausted, and other members of the same Workspace still write.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [member_quota_exhausted]
+  test: tests/conformance/test_quota.py::test_per_member_bound_is_distinct
+
 # ── Profile ──────────────────────────────────────────────────────────────────
 
 - id: CONF-PROF-001
@@ -1488,6 +1620,17 @@ items:
   observable: black-box
   codes: []
   test: tests/conformance/client/test_verification.py::test_holder_ref_not_cross_workspace
+
+- id: CONF-CLI-017
+  requirement: >
+    A client does not treat include_reprised=true as a retention promise: it keeps its
+    own copy of any history it requires, and tolerates an op present in that view on
+    one read and absent on a later one.
+  spec: "docs/01-the-log.md"
+  subject: client
+  observable: black-box
+  codes: []
+  test: tests/conformance/client/test_verification.py::test_history_view_not_durable
 
 - id: CONF-CLI-004
   requirement: A client verifies author_key_id against the key learned from that Member's registration.

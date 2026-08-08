@@ -13,7 +13,7 @@ to start with any of them unset.
 | 1 | `PROTOCOL_NAMESPACE` | `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`, 1–32 bytes, globally unique | [Keys](../04-keys.md) |
 | 2 | Workspace **creation** policy | `derived` with frozen namespaces, `explicit`, or a profile-defined predicate; access is not a profile decision | [Authority](../03-authority.md) |
 | 3 | Where admission is enforced | *that* founding registration is gated and by what layer — `open` is a legal answer; the **mechanism** is never declared | [Identity](../02-identity.md) |
-| 4 | Role table | role tokens and their op classes; MUST contain exactly one `owner` | [Authority](../03-authority.md) |
+| 4 | Role table | role tokens and their op classes; MUST contain exactly one `owner`; an entry for `0x81` MAY name payload types, and confers `prune` only when it does not | [Authority](../03-authority.md) |
 | 5 | Member-kind set | the legal `member_kind` tokens | [Authority](../03-authority.md) |
 | 6 | Grant-admissibility rule | optional; absent means admit everything | [Authority](../03-authority.md) |
 | 7 | Body size classes and oversize step | ascending positive integers | [The Log](../01-the-log.md) |
@@ -143,7 +143,7 @@ Every row answered, no optional row taken up — the smallest thing that starts:
 | 11 | `holder_ref` | the holder's Root public key, verbatim |
 
 > Three rows answered "none", which is an answer rather than an omission — a server
-> started against this table serves `0x01`, `0x04`, `0x80` and `0x81`, and refuses
+> started against this table serves `0x01`, `0x02`, `0x80` and `0x81`, and refuses
 > every other class byte. Nothing here is borrowed from anywhere; the table is the
 > whole profile.
 

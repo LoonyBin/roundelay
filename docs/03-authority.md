@@ -482,8 +482,21 @@ the server cannot reverse, because no rule here reads the bytes.
 registrations in two Workspaces carrying the same bytes are one identity, nor that
 different bytes are different identities.
 
-**[S]** The server **stores it and never interprets it**. It gates nothing, grants
-nothing, and appears in no check.
+**[S]** The server **stores it and never interprets it**. It grants nothing, and
+appears in no **authority** check: no route, role, bar or verdict in this
+specification consults it.
+
+**[S]** One use is permitted, and it is not an authority check. A deployment bounding
+what one person may consume MAY group a Workspace's registrations by `holder_ref`
+**equality** ([The Log](01-the-log.md)). That reads no meaning out of the bytes — a
+blinded value groups exactly as well as a plain one — and it decides how much, never
+whether.
+
+> Stated as an exception rather than folded into the rule, because "appears in no
+> check" was the stronger claim and it is no longer quite true. A refusal can now
+> depend on this field. It is worth being precise about which kind: counting bytes per
+> author is not deciding who may write, and the field still cannot make anyone a
+> member, a grantee, or an owner.
 
 > It is attribution, not authorisation — which is exactly why it needs no consent
 > from the holder. The Workspace's Root is asserting a fact about its own Workspace.
@@ -497,7 +510,9 @@ string, or any other identifier a person would recognise — not beside the hold
 anywhere.
 
 > Certificates go into the log. The log is append-only, replicated to every member
-> device, and never deleted. A name written into one is a name that can never be
+> device, and never deleted — and `hard_prune` does not reach it, because a control op
+> can never be a prune target and so can never become reprised. A name written into a
+> certificate is a name that can never be
 > withdrawn: erasure becomes impossible by construction, and every member of a
 > Workspace learns every other member's real identity whether the deployment wanted
 > that or not.
@@ -610,7 +625,7 @@ escrow; losing the key costs one `revoke_delegation` and one `delegate`.
 **[P]** The profile supplies a **role table**: a set of role tokens and, for each,
 which op classes it permits.
 
-**[W]** The core fixes four things, and a profile MUST NOT relax any of them:
+**[W]** The core fixes five things, and a profile MUST NOT relax any of them:
 
 | # | Rule |
 |---|---|
@@ -618,6 +633,38 @@ which op classes it permits.
 | 2 | `0x80` ops, when not Root-signed, require `owner` and no other role |
 | 3 | an `owner` grant may only be created **and** only revoked with `granter`/`revoker` = `root` |
 | 4 | an unrecognised role token is refused `unknown_role`, never ignored |
+| 5 | a role entry naming `0x81` confers **`prune` only**; `hard_prune` is conferred only by naming it explicitly |
+
+### Rule 5: the one destructive lane
+
+**[P]** A role table entry for `0x81` MAY name the payload types it permits. An entry
+that names none permits `prune` and refuses `hard_prune` with
+`role_forbids_prune_type`.
+
+```
+   participant : 0x01, 0x02                    writes and folds nothing
+   folder      : 0x02, 0x81                    folds; cannot destroy
+   folder      : 0x02, 0x81{prune,hard_prune}  folds and reclaims
+```
+
+**[W]** This is the **only** place a role is finer than a class, and it is deliberate
+rather than a general mechanism. Granularity belongs in the opaque range, where a
+profile declares its own classes ([The Log](01-the-log.md)) — burning a core class per
+authorisation lane would exhaust `0x80–0xBF` in a hurry.
+
+> The exception earns itself on one asymmetry. Everywhere else, a class is a lane over
+> one behaviour and the worst a misgrant does is let the wrong member write the wrong
+> kind of op — recoverable, because the log is append-only and a mistaken op can be
+> reprised. `hard_prune` is the single operation in this protocol that destroys, so an
+> unqualified grant that silently included it would be the one misgrant with no repair.
+>
+> Which is also why the default runs the safe way. Every profile written before this
+> type existed grants `0x81` unqualified and keeps meaning exactly what it meant: fold,
+> do not destroy.
+
+**[S]** The server reads `0x81` bodies, so it enforces rule 5 by reading the `type` it
+already parses. No new inspection, and nothing about the check depends on a body it
+may not open.
 
 > Rule 3's symmetry is the point. If an owner could mint another owner, a compromised
 > device could create an attacker-owner cheaply, while removing one still cost Root —

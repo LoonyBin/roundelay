@@ -112,7 +112,8 @@ now". [The Log](../01-the-log.md)
 **profile** — the per-deployment policy layer the core requires.
 [Profile obligations](profile-obligations.md)
 
-**prune op** — class `0x81`. Server-read. Attests which ops a reprise stands in for.
+**prune op** — class `0x81`. Server-read, and self-identifying by a mandatory `type`:
+`prune` attests which ops a reprise stands in for, `hard_prune` reclaims their bytes.
 [The Log](../01-the-log.md)
 
 **access gate** — the check, on every Workspace-scoped device route, that this device
@@ -129,14 +130,19 @@ profile row. Attribution only: it grants nothing, the server never interprets it
 the core promises only that equal bytes mean one identity *within one Workspace*.
 [Authority](../03-authority.md)
 
-**reprise op** — class `0x04`. Holds the combined effect of the ops folded into it,
+**reprise op** — class `0x02`. Holds the combined effect of the ops folded into it,
 stated again. Opaque: the server treats it exactly as content and never reads it. Its
 two variants — reclaiming storage, and restating in a newer payload encoding — are
 one operation here; which was meant lives in the payload.
 [The Log](../01-the-log.md)
 
 **reprised** — the state of an op named by an accepted prune: hidden from ordinary
-reads, served by `include_reprised=true`, never deleted.
+reads, still served by `include_reprised=true`. Reversible, and the only state from
+which a `hard prune` may destroy the bytes.
+
+**hard prune** — the `0x81` payload type that destroys a reprised op's envelope bytes,
+leaving a tombstone. The one irreversible operation in the protocol, conferred only by
+a role entry that names it. [The Log](../01-the-log.md)
 
 **Root** — the identity: an Ed25519 keypair whose public key names the Workspaces it
 founded. Signs certificates; never authenticates; never appears in a header. Not a

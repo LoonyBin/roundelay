@@ -1047,6 +1047,8 @@ grew when Workspaces became shareable, in the direction that matters most.
 - who holds which permissions, and every change: grants, revokes, delegations
 - when keys were rotated
 - which vault slots share a pinned Root, and so belong to one identity (§7)
+- **which Workspaces share a payer**, wherever an allowance is pooled — the server
+  enforces the pool, so it holds the grouping by construction ([The Log](01-the-log.md))
 
 **And one thing more, once reprising starts:** a prune op names the ops it reprises,
 so the server learns that those ops belong together — without learning what they are.
@@ -1096,6 +1098,11 @@ A profile whose `holder_ref` the server cannot reverse closes it
 identity per Workspace**, because a device's three public keys are otherwise the same
 bytes everywhere it joins and rebuild the join by themselves. Both halves or neither;
 one alone changes nothing.
+
+**And one join no protocol decision reaches.** Whoever bills for a deployment knows
+which Workspaces belong to which organisation, by name and by payment method, because
+that is what invoicing is. Opaque `holder_ref` and per-Workspace device identities
+hide the grouping in the log; they do not touch the operator's own records.
 
 ### Holding the keys does not withhold the metadata
 

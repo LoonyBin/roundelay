@@ -21,6 +21,16 @@ implementation keeps is its own business.
 | **Challenge nonces and rate counters** — with expiry | device login, rate limits |
 | **Per extension binding** — `(Workspace, member, extension class)`; bound NAME; start position; end position (**write-once**); several intervals per key | judging `0xC0–0xFF` ops against their author's own binding at that position; **only where extensions are implemented** |
 
+**[S]** The **envelope bytes** are the one entry an accepted `hard_prune` may drop
+([The Log](../01-the-log.md)). Everything else on that row is a **tombstone** and
+survives for ever: without it, `(workspace, author, op_id)` stops refusing a
+re-append and a destroyed op can be resurrected as a new one.
+
+**[S]** Quota, allowance and billing state are **not on this list**. Nothing derives
+from them, no op records them, and a replacement rebuilt from the log is complete
+without them — like rate-limit counters, which they resemble in every way that
+matters here.
+
 **[S]** The vault slot's pinned Root is **not** write-once. It moves when a write
 carries a different `root_pk` and is signed by the key currently pinned — the vault's
 half of a root handover ([Keys](../04-keys.md)).
