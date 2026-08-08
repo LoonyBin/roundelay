@@ -213,7 +213,7 @@ certificate, an unrecognised key is likewise refused — `malformed_control_payl
 
 ## 5. In-band versioning: the served sets
 
-**[W]** Three sets define what an implementation understands. Anything outside
+**[W]** Five sets define what an implementation understands. Anything outside
 fails closed.
 
 | Set | v1 |
@@ -356,6 +356,16 @@ purpose.
 
 **[S]** `limits` MUST carry those four keys and MAY carry more.
 
+**[S]** `max_page_size` and `default_page_size` govern **every** paged route — `GET
+…/ops`, `GET …/members`, `GET …/keywraps/me` and `GET …/epoch-keys` alike. One
+advertised pair, not one per route.
+
+> Otherwise a client would have to discover a ceiling per route, and the first route
+> added after a deployment shipped would have no way to advertise its own.
+
+**[S]** A deployment's request-body bound ([the conventions](README.md)) is refused
+`413 request_too_large`, on any route.
+
 > `contract_versions` exists because otherwise a client discovers an unsupported
 > contract only by getting a `404` on a real request. `protocol_namespace` exists
 > for the same reason with more force: without it, a namespace mismatch surfaces as
@@ -456,7 +466,7 @@ deployment:
 
 You have read all five layers. What remains is reference material:
 
-- [Refusal codes](reference/refusal-codes.md) — all 110
+- [Refusal codes](reference/refusal-codes.md) — all 119
 - [Glossary](reference/glossary.md)
 - [Retained state](reference/retained-state.md)
 - [Profile obligations](reference/profile-obligations.md)
