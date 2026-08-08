@@ -6,7 +6,7 @@ implementation keeps is its own business.
 
 | Facts | Required by |
 |---|---|
-| **Per op** — envelope bytes; transport position; Workspace; class; key epoch; op id; author; author key id; author position; reprised-by position | idempotency, chain check, epoch floor, prune cross-checks, `include_reprised` |
+| **Per op** — envelope bytes; transport position; Workspace; class; key epoch; op id; author; author key id; author position; reprised-by position; **envelope hash, from the moment the bytes are dropped** | idempotency, chain check, epoch floor, prune cross-checks, `include_reprised`, `prune_target_attestation_mismatch` once the bytes are gone |
 | **Uniqueness** — `(workspace, author, op_id)` and `(workspace, author, author_seq)` | idempotency and the author chain; **enforced by storage, not application code** |
 | **Per device** — id; control signing key; content signing key; sealing key; the three derived key ids | `kex_key_id_not_registered`, `author_member_mismatch`, `author_key_class_mismatch` |
 | **Per registration** — `(Workspace, device)`; member kind; **`holder_ref`, 32 opaque bytes** | the access gate, member listing, `unknown_grantee`, `no_registration` |
@@ -22,9 +22,30 @@ implementation keeps is its own business.
 | **Per extension binding** — `(Workspace, member, extension class)`; bound NAME; start position; end position (**write-once**); several intervals per key | judging `0xC0–0xFF` ops against their author's own binding at that position; **only where extensions are implemented** |
 
 **[S]** The **envelope bytes** are the one entry an accepted `hard_prune` may drop
-([The Log](../01-the-log.md)). Everything else on that row is a **tombstone** and
-survives for ever: without it, `(workspace, author, op_id)` stops refusing a
-re-append and a destroyed op can be resurrected as a new one.
+([The Log](../01-the-log.md)). Everything else on that row is the **tombstone** and
+survives for ever — **ten facts, no fewer**: transport position, Workspace, class,
+key epoch, op id, author, author key id, author position, reprised-by position, and
+the envelope hash. That enumeration and the tombstone in
+[The Log](../01-the-log.md) §7 are **one list**; a field added to either belongs in
+both.
+
+> Each is load-bearing once the bytes are gone. Without op id and author,
+> `(workspace, author, op_id)` stops refusing a re-append and a destroyed op can be
+> resurrected as a new one. Without class and reprised-by position, a repeat
+> `hard_prune` cannot be judged against `hard_prune_target_is_prune` and
+> `hard_prune_target_not_reprised`. Without the envelope hash, its attestation cannot
+> be judged at all, and a false one lands silently.
+
+**[S]** The envelope hash is materialised **at `hard_prune` time** — computed from
+the bytes about to be dropped, or carried over from the attestation check just
+performed on those same bytes, which computes the identical value. It is **never**
+taken from the payload that asked for the destruction. While the bytes are still
+held it need not be stored at all: it is a function of them, and a server may
+compute it on demand.
+
+> Taking it from the payload would make every later check circular — the first
+> `hard_prune` would get to choose what every one after it must match, which is
+> precisely the forgery the attestation exists to catch.
 
 **[S]** Quota, allowance and billing state are **not on this list**. Nothing derives
 from them, no op records them, and a replacement rebuilt from the log is complete

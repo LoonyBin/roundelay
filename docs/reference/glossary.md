@@ -58,6 +58,11 @@ before any wrap is uploaded. [Keys](../04-keys.md)
 **envelope** — the complete signed byte string: header, body, signature.
 [The Log](../01-the-log.md)
 
+**envelope hash** — bare SHA-256 over the complete envelope bytes,
+`header || body || signature`, nothing prefixed or re-serialised. What
+`prev_author_hash` and a prune target's attestation carry.
+[The Log](../01-the-log.md)
+
 **epoch** — `key_epoch`. The generation of a Workspace's content key. Monotonic,
 single-step, never reused. [Keys](../04-keys.md)
 
@@ -71,7 +76,7 @@ implementation, enabled by the profile, bound per member by an `ext_binding`.
 Disabled by default. [The Log](../01-the-log.md)
 
 **founding Root** — the Root that authored a Workspace's genesis. Its public key is
-what the Workspace id derives from, so it never changes.
+what a Workspace id is bound to at genesis, so it never changes.
 [Authority](../03-authority.md)
 
 **grant** — a signed statement that a device holds a role in a Workspace.
@@ -85,8 +90,9 @@ member_id_hex]`. The server stores it and never orders by it.
 credential, by a construction the core does not define. Knowing it is the only claim
 a read requires. [Keys](../04-keys.md)
 
-**master wrap key** — 32 bytes, one per identity, living only inside the vault
-record. Opens every epoch's escrow wrap. [Keys](../04-keys.md)
+**master wrap key** — 32 bytes, one per identity. At rest on the server it exists
+only inside the vault record; whether a client keeps it warm between ceremonies is
+custody policy. Opens every epoch's escrow wrap. [Keys](../04-keys.md)
 
 **Member** — a device, identified by a signing keypair, introduced by a Root-signed
 registration. The only thing that authors ops. [Identity](../02-identity.md)
@@ -159,6 +165,11 @@ yet been accepted into the log. Confers nothing.
 [Identity](../02-identity.md)
 
 **size class** — a legal padded body length. [The Log](../01-the-log.md)
+
+**tombstone** — what survives an accepted hard prune: every per-op fact, the envelope
+hash included, and none of the bytes. Uniqueness still refuses a resurrection,
+positions stay stable, the gap stays auditable, and a later attestation stays
+checkable. [The Log](../01-the-log.md)
 
 **transport position** — `seq`. An op's position in its Workspace's log. A cursor
 only: never causality, never a merge input, never evidence.
