@@ -569,6 +569,10 @@ escrow; losing the key costs one `revoke_delegation` and one `delegate`.
 > the wrapping secret. A delegate is the first key in the system that may simply be
 > thrown away, so it adds authority without adding a way to be locked out.
 
+> Non-normative guidance on who should keep Root when the identity stands for an
+> organisation — and on what this delegation relieves them of — is under [Keys
+> §7](04-keys.md#guidance--custody-of-a-shared-identity).
+
 ---
 
 ## 7. Roles

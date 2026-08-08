@@ -810,6 +810,71 @@ SHOULD. An identity is admitted once ([Identity](02-identity.md)), but locators 
 the caller's to choose, so one admitted identity can otherwise write slots without
 limit into the one table worth stealing.
 
+### Guidance — custody of a shared identity
+
+> **Non-normative.** No server can see any of this, and a deployment that ignores all
+> of it is conformant.
+
+An identity that stands for an organisation has exactly the vault a person's does,
+and one requirement a person's does not have: **no single individual should be able
+to open it, and no single individual's departure should close it.**
+
+The artifact needing a policy is the **wrapping secret**. It is not a password for a
+manager belonging to whoever set the account up. It opens Root — and through the
+master wrap key beside it, every epoch key ever escrowed, which is every content key
+the organisation has used.
+
+- **Split it.** A `k`-of-`n` reconstruction over the 32 bytes fits without any
+  protocol support, because §6 specifies the slot and stops: nothing on the wire, and
+  nothing in the server, can tell how the secret was assembled.
+- **Record where it is.** The locator is not secret in the way the wrapping secret is,
+  but it is what makes the record findable at all, and the bound on offline guessing
+  in §6 assumes an attacker does not have it. Durable, not public.
+- **Rehearse it.** A quorum that has never been convened is not known to work. The
+  first attempt should not be the real one — that is the same failure §6 describes for
+  a mis-minted master wrap key, arriving at the same moment and for the same reason.
+- **A departure is a re-split, not a handover.** Cheap, as long as the quorum stays
+  above the number of shares that could plausibly be combined. It becomes a
+  `root_handover` only when a share leaves in hostile hands, which is expensive and is
+  the thing the quorum size is chosen to avoid.
+
+**Delegation is what keeps the ceremony rare.** With [Authority
+§6](03-authority.md#6-delegation-keeping-root-cold), the quorum is needed for three
+things only — founding, handing over, and rewriting the vault. Every registration,
+grant and revoke goes through a delegate. A deployment convening its quorum weekly has
+something delegable that it has not delegated.
+
+### Guidance — the custodian
+
+> **Non-normative**, and about client deployment rather than about this server. The
+> name belongs to this section, for talking about the arrangement. It is not a
+> protocol role, and nothing in the core knows it exists.
+
+Nothing requires the party that keeps Root to be online, co-located with anything, or
+continuously reachable. An organisation may keep it on a small machine inside its own
+network — a **custodian** — that comes up to sign and goes back down. It is how a
+quorum-held Root stays cold in practice, and what
+[delegation](03-authority.md#6-delegation-keeping-root-cold) keeps it cold *for*.
+
+**A custodian is a client.** It speaks the same routes every other client speaks, and
+the server gives it nothing — no mode, no registration, no awareness that it exists.
+Worth saying plainly because the arrangement looks like infrastructure: there is no
+server-side half to build, and a deployment that sets out to add one has misread where
+the trust sits.
+
+It is not a **holder** ([Authority](03-authority.md)), which is the identity a device
+belongs to. English makes the two words near-synonyms; here one is a machine looking
+after key material and the other is 32 bytes in a certificate.
+
+What it buys is that the store can be hosted at any scale, anywhere, while the machine
+that looks after the identity stays small, local, and switched off between uses.
+Content is sealed against the host either way — what moves is who can be
+**compelled**, not what the server can read.
+
+What it does not buy is anything on §9's list. Metadata is what the server sees by
+doing its job, and moving Root behind a firewall does not change which ops arrive,
+from which device, or when.
+
 ---
 
 ## 8. The key-plane endpoints
