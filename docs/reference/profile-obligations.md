@@ -5,13 +5,13 @@ to start with any of them unset.
 
 > There are no defaults, because every silent default here is either a security hole
 > or a convergence bug. A guessed protocol namespace would let two unrelated
-> deployments' signatures verify against each other; a guessed reachability rule
-> would let one identity address another's Workspaces.
+> deployments' signatures verify against each other; a guessed creation rule would
+> let one identity mint Workspace ids that belong to another.
 
 | # | Obligation | Constraint | Defined in |
 |---|---|---|---|
 | 1 | `PROTOCOL_NAMESPACE` | `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`, 1–32 bytes, globally unique | [Keys](../04-keys.md) |
-| 2 | Workspace reachability policy | `derived` with frozen namespaces, `explicit`, or a profile-defined predicate | [Authority](../03-authority.md) |
+| 2 | Workspace **creation** policy | `derived` with frozen namespaces, `explicit`, or a profile-defined predicate; access is not a profile decision | [Authority](../03-authority.md) |
 | 3 | Where admission is enforced | *that* founding registration is gated and by what layer — `open` is a legal answer; the **mechanism** is never declared | [Identity](../02-identity.md) |
 | 4 | Role table | role tokens and their op classes; MUST contain exactly one `owner` | [Authority](../03-authority.md) |
 | 5 | Member-kind set | the legal `member_kind` tokens | [Authority](../03-authority.md) |
@@ -114,7 +114,7 @@ Every row answered, no optional row taken up — the smallest thing that starts:
 | # | Obligation | `acme/p1` |
 |---|---|---|
 | 1 | namespace | `acme` |
-| 2 | reachability | `derived`, one frozen namespace — one Workspace per identity |
+| 2 | creation | `derived`, one frozen namespace — one Workspace per identity |
 | 3 | admission | in the server, at the founding registration; an invite token |
 | 4 | role table | `owner`, `participant` |
 | 5 | member kinds | `{device}` |

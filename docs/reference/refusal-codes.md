@@ -17,13 +17,14 @@ Every refusal has the shape `{"detail": {"code": …, …extra fields…}}`. On
 | Code | Status | Raised on | Extra fields | Det. | Where |
 |---|---|---|---|---|---|
 | `admission_refused` | 403 | `POST /v1/members` | — | yes | Identity |
-| `already_revoked` | 422 | `POST …/ops` revoke | `index` | yes | Authority |
+| `already_revoked` | 422 | `POST …/ops` revoke, revoke_delegation | `index` | yes | Authority |
 | `author_chain_conflict` | 409 | `POST …/ops` | `index`, `author_seq`, `expected_author_seq` — **all absent on the race form** | no | Log |
+| `author_key_class_mismatch` | 422 | `POST …/ops` | `index`, `op_class` | yes | Authority |
 | `author_member_mismatch` | 403 | `POST …/ops` | `index` | yes | Log |
 | `bad_grant_signature` | 422 | `POST …/ops` grant | `index` | yes | Authority |
 | `bad_member_challenge` | 401, 422 | `POST /v1/members/{m}/token` | — | yes | Identity |
 | `bad_revoke_signature` | 422 | `POST …/ops` revoke | `index` | yes | Authority |
-| `bad_root_signature` | 422 | `POST …/ops` genesis, register, handover; `POST /v1/members` | `index` where per-op | yes | Authority |
+| `bad_root_signature` | 422 | `POST …/ops` control; `POST /v1/members` | `index` where per-op | yes | Authority |
 | `bad_vault_signature` | 403 | `PUT …/vault` | — | yes | Keys |
 | `batch_too_large` | 413 | `POST …/ops` | `max_ops` | yes | Log |
 | `cert_granter_mismatch` | 422 | `POST …/ops` grant, revoke | `index` | yes | Authority |
@@ -32,6 +33,7 @@ Every refusal has the shape `{"detail": {"code": …, …extra fields…}}`. On
 | `cert_root_pk_mismatch` | 422 | `POST …/ops` genesis, handover; `POST /v1/members` | `index` where per-op | yes | Authority |
 | `cert_workspace_mismatch` | 422 | `POST …/ops` control | `index` | yes | Authority |
 | `control_chain_break` | 422 | `POST …/ops` control | `index` | yes | Authority |
+| `delegation_id_already_used` | 409 | `POST …/ops` delegate | `index` | yes | Authority |
 | `duplicate_keywrap_member` | 422 | `PUT …/keywraps` | `index` | yes | Keys |
 | `encrypted_control_op` | 422 | `POST …/ops` | `index` | yes | Keys |
 | `encrypted_prune_op` | 422 | `POST …/ops` | `index` | yes | Keys |
@@ -77,6 +79,7 @@ Every refusal has the shape `{"detail": {"code": …, …extra fields…}}`. On
 | `member_register_not_first` | 422 | `POST …/ops` genesis, register | `index`, `author_seq` | yes | Authority |
 | `missing_keywrap_digest` | 422 | `PUT …/keywraps` | `epoch` | yes | Keys |
 | `no_live_grant` | 403 | device routes | `index` where per-op, `revoked` | no | Authority |
+| `no_registration` | 403 | Workspace-scoped device routes | `index` where per-op | yes | Authority |
 | `no_vault_record` | 404 | `GET …/vault` | — | no | Keys |
 | `non_zero_padding` | 422 | `POST …/ops` server-read classes | `index` | yes | Log |
 | `not_found` | 404 | any unrouted path, including a misshapen locator | — | yes | Compat |
@@ -99,6 +102,7 @@ Every refusal has the shape `{"detail": {"code": …, …extra fields…}}`. On
 | `rotate_not_materialised` | 409 | `PUT …/keywraps` | `epoch` | no | Keys |
 | `store_unavailable` | 503 | `GET /health/db` | — | no | Compat |
 | `truncated_envelope` | 422 | `POST …/ops` | `index` | yes | Log |
+| `unknown_delegation` | 422 | `POST …/ops` revoke_delegation | `index` | yes | Authority |
 | `unknown_grant` | 422 | `POST …/ops` revoke | `index` | yes | Authority |
 | `unknown_grantee` | 422 | `POST …/ops` grant | `index` | yes | Authority |
 | `unknown_keywrap_member` | 422 | `PUT …/keywraps` | `index` | yes | Keys |
@@ -116,9 +120,9 @@ Every refusal has the shape `{"detail": {"code": …, …extra fields…}}`. On
 | `vault_version_regression` | 409 | `PUT …/vault` | `stored_version` | yes | Keys |
 | `workspace_mismatch` | 422 | `POST …/ops` | `index` | yes | Log |
 | `workspace_not_created` | 409 | `POST …/ops`; `POST /v1/members` | `index` where per-op | no | Authority |
-| `workspace_not_reachable` | 403 | any `/v1/w/{w}/…` route; `POST /v1/members` | `index` where per-op | yes | Authority |
+| `workspace_not_reachable` | 403 | `POST …/ops` genesis; `POST /v1/members` | `index` where per-op | yes | Authority |
 
-One hundred. Admission is refused under `admission_refused` whatever mechanism a
+One hundred and four. Admission is refused under `admission_refused` whatever mechanism a
 server uses, so the vocabulary stays closed even though the gate is not specified.
 
 ## Client codes
@@ -151,10 +155,13 @@ client's response is identical either way.
 |---|---|
 | `cert_root_pk_mismatch` vs `bad_root_signature` | *this document names the wrong Root* is a rebuild; *these bytes are forged* is not |
 | `unknown_grant` vs `unknown_grantee` | a failed revocation is not an invalid grantee |
+| `unknown_delegation` vs `unknown_grant` | different objects, different remedies |
 | `key_epoch_stale` vs `key_epoch_unknown` | too old is a catch-up; too new is an impossible epoch |
 | `encrypted_control_op` vs `encrypted_prune_op` | different remedies |
 | `prune_target_is_control` vs `prune_target_is_prune` | different reasons for exemption |
 | `bad_vault_signature` vs `vault_version_regression` | *you do not control this slot* is terminal; *you are behind* is a re-read |
+| `no_registration` vs `no_live_grant` | *you are not a member here* needs a registration; *you have no permission* needs a grant |
+| `workspace_not_reachable` vs `no_registration` | *that id is not yours to found* versus *you have not been let in* |
 | `admission_refused` vs `workspace_not_created` | *you may not found one* is for the operator; *that one does not exist yet* is a client ordering bug |
 
 ## One code with two occasions

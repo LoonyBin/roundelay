@@ -31,11 +31,11 @@ ones above it.
 
 Reference material, kept out of the narrative:
 
-- [Refusal codes](docs/reference/refusal-codes.md) — all 106, with cause and whether a retry helps
+- [Refusal codes](docs/reference/refusal-codes.md) — all 110, with cause and whether a retry helps
 - [Glossary](docs/reference/glossary.md)
 - [Retained state](docs/reference/retained-state.md) — what a server must remember
 - [Profile obligations](docs/reference/profile-obligations.md) — the ten decisions a deployment makes
-- [Conformance](conformance/checklist.yaml) — 160 machine-readable items
+- [Conformance](conformance/checklist.yaml) — 179 machine-readable items
 
 ---
 

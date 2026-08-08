@@ -90,11 +90,11 @@ Read them in this order. Each one only depends on the ones above it.
 
 Reference material, extracted so the narrative does not carry it:
 
-- [Refusal codes](reference/refusal-codes.md) — all 106, with status, cause and whether a retry can help
+- [Refusal codes](reference/refusal-codes.md) — all 110, with status, cause and whether a retry can help
 - [Glossary](reference/glossary.md) — every term, defined once
 - [Retained state](reference/retained-state.md) — what a server must remember
 - [Profile obligations](reference/profile-obligations.md) — the ten decisions a deployment must make
-- [Conformance](../conformance/checklist.yaml) — 160 machine-readable items
+- [Conformance](../conformance/checklist.yaml) — 179 machine-readable items
 
 ---
 

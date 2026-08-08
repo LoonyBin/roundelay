@@ -208,7 +208,7 @@ fails closed.
 |---|---|
 | suites | `0x00` plaintext, `0x01` encrypted |
 | op classes | `0x01` content, `0x04` reprise, `0x80` control, `0x81` prune, `0xBF` ext_binding |
-| control types | `workspace_genesis`, `member_register`, `grant`, `revoke`, `root_handover`, `rotate` |
+| control types | `workspace_genesis`, `member_register`, `grant`, `revoke`, `delegate`, `revoke_delegation`, `root_handover`, `rotate` |
 | ext_binding types | `bind`, `unbind` |
 
 **[W]** Op class **`0x03` is reserved** — claimed for a future core assignment,
@@ -446,7 +446,7 @@ deployment:
 
 You have read all five layers. What remains is reference material:
 
-- [Refusal codes](reference/refusal-codes.md) — all 106
+- [Refusal codes](reference/refusal-codes.md) — all 110
 - [Glossary](reference/glossary.md)
 - [Retained state](reference/retained-state.md)
 - [Profile obligations](reference/profile-obligations.md)

@@ -8,8 +8,10 @@ implementation keeps is its own business.
 |---|---|
 | **Per op** — envelope bytes; transport position; Workspace; class; key epoch; op id; author; author key id; author position; reprised-by position | idempotency, chain check, epoch floor, prune cross-checks, `include_reprised` |
 | **Uniqueness** — `(workspace, author, op_id)` and `(workspace, author, author_seq)` | idempotency and the author chain; **enforced by storage, not application code** |
-| **Per device** — id; certifying Root public key; signing key; sealing key; derived key id; member kind; **the set of Workspaces it is registered in** | reachability, member listing, `unknown_grantee`, `kex_key_id_not_registered`, `author_member_mismatch` |
+| **Per device** — id; control signing key; content signing key; sealing key; the three derived key ids | `kex_key_id_not_registered`, `author_member_mismatch`, `author_key_class_mismatch` |
+| **Per registration** — `(Workspace, device)`; member kind; **holder Root public key** | the access gate, member listing, `unknown_grantee`, `no_registration` |
 | **Per Workspace** — existence and genesis position; **current Root public key** | `workspace_not_created`, certificate verification, `cert_root_pk_mismatch` |
+| **Per delegation** — `(workspace, delegation_id)`; delegate public key; start position; end position (**write-once**) | root-authority signature checks, `delegation_id_already_used`, `already_revoked` |
 | **Per grant** — `(workspace, grant_id)`; device; role; granter; start position; end position (**write-once**) | the positional verdict, `grant_id_already_used`, `already_revoked` |
 | **Per (Workspace, epoch)** — committed digest; escrow wrap; rotate position (absent at epoch 0) | the digest gate, `rotate_not_materialised`, the epoch-keys omission rule |
 | **Per (Workspace, device, epoch)** — sealing key id; wrap | `keywraps/me`, write-once |
@@ -56,6 +58,7 @@ by replaying it:
 - Workspace existence and genesis position
 - **the Workspace's current Root**, from its genesis and every handover since
 - every grant, with role, granter, and start and end positions
+- every delegation, with its key and its start and end positions
 - every epoch's committed digest and rotate position, for epochs ≥ 1
 - each device's registration facts, and which Workspaces it is registered in
 - every extension binding — which member agreed to which NAME for which class, over

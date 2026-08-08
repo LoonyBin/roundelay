@@ -30,6 +30,13 @@ shell that has none confers no authority. [Identity](../02-identity.md)
 body; bit 6 says whether the value is defined outside the core; the low six select
 within the resulting quadrant. [The Log](../01-the-log.md)
 
+**content signing key** — `content_pk`. The device key that signs opaque-class
+envelopes, used constantly. [Authority](../03-authority.md)
+
+**control signing key** — `control_pk`. The device key that signs server-read
+envelopes and the auth challenge, used occasionally.
+[Authority](../03-authority.md)
+
 **content key** — `K(w, epoch)`. 32 random bytes that seal every opaque body in one
 Workspace at one epoch. [Keys](../04-keys.md)
 
@@ -39,6 +46,11 @@ Workspace at one epoch. [Keys](../04-keys.md)
 **current Root** — the Root a Workspace's certificates are verified against now.
 Equal to the founding Root until a root handover moves it.
 [Authority](../03-authority.md)
+
+**delegation** — a Root-signed statement that some other key may exercise **root
+authority** — registrations, grants, revokes — from that op's position. Never
+genesis, handover or the vault. Disposable: it has no recovery path, because Root
+mints another. [Authority](../03-authority.md)
 
 **digest** — `keywrap_digest`. The commitment a rotate op makes to a whole wrap set
 before any wrap is uploaded. [Keys](../04-keys.md)
@@ -103,8 +115,17 @@ now". [The Log](../01-the-log.md)
 **prune op** — class `0x81`. Server-read. Attests which ops a reprise stands in for.
 [The Log](../01-the-log.md)
 
-**reachability** — the profile predicate deciding which Workspace ids a given Root
-may address at all. [Authority](../03-authority.md)
+**access gate** — the check, on every Workspace-scoped device route, that this device
+holds an accepted registration in this Workspace. A fact in the log, never a profile
+decision. [Authority](../03-authority.md)
+
+**creation policy** — the profile predicate deciding which Workspace ids a given Root
+may bring into being. Asked at genesis and nowhere else.
+[Authority](../03-authority.md)
+
+**holder** — `holder_root_pk`. The identity that holds a device, named in its
+registration beside the Workspace Root that signed it. Attribution only: it grants
+nothing and the server never interprets it. [Authority](../03-authority.md)
 
 **reprise op** — class `0x04`. Holds the combined effect of the ops folded into it,
 stated again. Opaque: the server treats it exactly as content and never reads it. Its

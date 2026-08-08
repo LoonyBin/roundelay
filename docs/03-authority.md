@@ -72,6 +72,7 @@ Root authorises by **signing documents that travel inside ops and requests**:
 | a **grant** for the authority role | the only way to create one |
 | a **revoke** of the authority role | the only way to remove one |
 | a **handover** certificate | the only way to move a Workspace to a new Root |
+| a **delegation** | hands the middle three to an operational key — §6 |
 | a **vault** record | the only way to write a vault slot → [Keys](04-keys.md) |
 
 **[S]** A Root-signed control payload is accepted **regardless of the author's
@@ -99,7 +100,7 @@ record somebody keeps.
         (materialised from the log — the same one, until a handover)
 ```
 
-**[W]** The two are the same key until a `root_handover` moves the second one (§9).
+**[W]** The two are the same key until a `root_handover` moves the second one (§10).
 The first never moves: a Workspace's id is fixed at genesis.
 
 > Which is why there is normally no pinning step in this layer and no window during
@@ -115,35 +116,49 @@ The first never moves: a Workspace's id is fixed at genesis.
 
 ---
 
-## 3. Which Workspaces a Root can address
+## 3. Two gates, and they are not the same gate
 
-Before any permission question, a coarser one: is this Workspace id something this
-identity may name at all?
-
-**[S]** Every Workspace-scoped route evaluates a **reachability predicate** first,
-before anything else, and refuses `403 workspace_not_reachable` when it is false.
+Before any permission question there are two coarser ones, and conflating them is
+what makes a Workspace private to one identity for ever.
 
 ```
-   reachable(root_pk, workspace_id) → true / false
+   CREATION   may this Root bring this Workspace id into being?
+              ── asked once, at genesis ──
+              a profile decision · §3.1
+
+   ACCESS     may this device address this Workspace at all?
+              ── asked on every other Workspace-scoped route ──
+              a fact in the log · §3.2
 ```
 
-**[S]** The `root_pk` is whatever the request establishes: the **certifying Root**
-recorded beside the device ([Identity](02-identity.md)) when the credential is a
-device token, or the `root_pk` in the body when a registration certificate is being
-presented.
+> They look like one question while a Workspace has exactly one identity behind it,
+> and answering both by the same derivation is what a single-user deployment wants.
+> It is also what makes sharing impossible: a device belonging to somebody else is
+> turned away before anyone asks whether it holds a grant, and no grant can rescue a
+> request that never reaches the permission check.
+
+### 3.1 Creation
+
+**[S]** At `workspace_genesis`, and there only, the server asks whether the Root in
+the certificate may found the id it names. **[S]** It refuses `403
+workspace_not_reachable` when it may not.
+
+```
+   creatable(root_pk, workspace_id) → true / false
+```
 
 **[P]** The predicate is a **profile decision**, and there is **no permissive
 default**.
 
-> Be clear about what it does and does not bound. It decides which ids *one*
-> identity may address; it does not bound how many identities exist, because anyone
-> can mint an Ed25519 keypair without asking. Limiting that is admission's
-> job ([Identity](02-identity.md)), and a profile that leaves reachability strict
-> while leaving admission `open` has bounded nothing.
+> Be clear about what it does and does not bound. It decides which ids *one* identity
+> may bring into being; it does not bound how many identities exist, because anyone
+> can mint an Ed25519 keypair without asking. Limiting that is admission's job
+> ([Identity](02-identity.md)), and a profile that leaves creation strict while
+> leaving admission `open` has bounded nothing.
 
 The core names two policies; a profile may define others.
 
-### Policy `derived`
+#### Policy `derived`
 
 **[P]** The profile freezes an ordered list of UUID namespaces. A Root's Workspace
 ids are computed from them — the same answer on every device, offline, with no round
@@ -154,13 +169,8 @@ trip.
              ├── uuid5(NS₁, root_pk) ── Workspace 1
              └── …
 
-   reachable(r, w)  ⟺  w is one of those            ← the founding Root
-                       OR  r is w's current Root    ← after a handover, §9
+   creatable(r, w)  ⟺  w is one of those
 ```
-
-**[S]** The second disjunct is the only part of this predicate that consults stored
-state, and it is false-by-absence: a Workspace that has never handed over has a
-current Root equal to its founding one, so the first disjunct already answers.
 
 **[W]** UUID version 5 as in RFC 9562: SHA-1 over the 16 namespace bytes followed by
 the name bytes, truncated to 16, with version and variant bits set. The name is the
@@ -178,20 +188,59 @@ startup.
 
 > Recomputing them would make Workspace identity depend on two languages' UUID
 > implementations staying byte-stable for ever. If client and server disagree, every
-> request fails `workspace_not_reachable` with nothing to debug.
+> genesis fails `workspace_not_reachable` with nothing to debug.
 
-### Policy `explicit`
+**[P]** `derived` writes the founder's public key into the Workspace id **for ever**,
+where a handover cannot move it (§2). That is the right trade for a Workspace one
+identity owns, and the wrong one for a Workspace a company owns and an employee
+happened to create.
 
-**[P]** Reachable iff the server holds an accepted genesis for that Workspace *and*
-the Root named in it is the caller's.
+#### Policy `explicit`
 
-**[P]** Admission at device registration ([Identity](02-identity.md)) is what
-gates founding, because the first op into a fresh Workspace cannot satisfy the
-predicate.
+**[P]** Any id the profile's own creation authority assigns. The server checks the
+id is unused and admission ([Identity](02-identity.md)) is what gates founding.
 
-> That bootstrap gap is the cost `derived` avoids, and the reason most profiles start
-> there. `explicit` earns its keep only when Workspace ids must be assigned rather
-> than computed.
+**[P]** A profile whose Workspaces are shared, long-lived, or outlive the person who
+created them SHOULD prefer `explicit`. It is the only policy under which a Workspace
+id says nothing about who founded it.
+
+### 3.2 Access
+
+**[S]** Every **other** Workspace-scoped route asks a different question, first,
+before anything else, and refuses `403 no_registration` when the answer is no:
+
+```
+   does this device hold an accepted registration in this Workspace?
+```
+
+**[S]** This is **not** a profile decision. It is read from the log, it is the same
+question on every server, and a profile MUST NOT widen or narrow it.
+
+> Membership is a signed fact, not a policy. The registration that establishes it is
+> a Root-signed certificate in the log, replayable by every device, and there is
+> nothing left for a deployment to decide.
+
+**[S]** Registration is **per Workspace**. A device registered in one Workspace is a
+stranger to every other, including Workspaces founded by the same Root.
+
+**[S]** `no_registration` is distinct from `no_live_grant`. A device registered here
+and holding no grant at all passes this gate — that is how an enrolling device reads
+the control log before anyone has granted it anything (§8).
+
+### The one carve-out
+
+**[S]** An author's **first op in a Workspace** is exempt from the access gate,
+because it is the op that establishes access: a `workspace_genesis`, or a
+`member_register` naming the author.
+
+> Without the exemption nothing could ever join anything. The founder's registration
+> is embedded in the genesis it is posting; a joining device's registration is the
+> first op it writes. Both would be refused for not yet being what they are about to
+> become.
+
+**[S]** The exemption opens nothing, because the exempt op carries a **Root-signed
+certificate for the Workspace it names**. A device may present its own registration
+anywhere; only the one this Workspace's Root signed is accepted.
 
 ---
 
@@ -200,13 +249,15 @@ predicate.
 Permission changes are ops like any other — class `0x80`, in the same log, in the
 same order. Server-read, like every class with bit 7 set.
 
-**[W]** `0x80` bodies are **unencrypted JSON**, for ever. Six types:
+**[W]** `0x80` bodies are **unencrypted JSON**, for ever. Eight types:
 
 ```
    workspace_genesis   the Workspace exists; here is its Root
    member_register     this device's keys are these keys
    grant               this device holds this role
    revoke              that grant is over
+   delegate            this key may exercise root authority — §6
+   revoke_delegation   that delegation is over
    root_handover       the Workspace's Root is now this other key
    rotate              the Workspace moved to a new content key → Keys
 ```
@@ -252,8 +303,8 @@ accept a non-genesis control op with a zero link even when its own view is empty
 
 ## 5. The certificates
 
-Five of the six control types carry a **certificate**: a frozen, separately signed
-document. The sixth (`rotate`) does not, and §9 explains why.
+Seven of the eight control types carry a **certificate**: a frozen, separately signed
+document. The eighth (`rotate`) does not, and §10 explains why.
 
 ```
    ┌─────────────────────────────────────────────────────┐
@@ -295,13 +346,15 @@ registration, but the *device being registered* is what posts it.
 `POST /v1/members` ([Identity](02-identity.md)) rather than inside an op, under the
 same codes. One certificate, one vocabulary, whichever door it arrives at.
 
-### The five documents
+### The seven documents
 
 ```json
-// registration — signed by Root
+// registration — signed by the Workspace's Root
 {"workspace_id": "…", "member_id": "…", "member_kind": "<token>",
- "sign_pk": "<b64 32B>", "sign_key_id": "<b64 8B>",
- "kex_pk":  "<b64 32B>", "kex_key_id":  "<b64 8B>",
+ "holder_root_pk":  "<b64 32B>",
+ "control_pk": "<b64 32B>", "control_key_id": "<b64 8B>",
+ "content_pk": "<b64 32B>", "content_key_id": "<b64 8B>",
+ "kex_pk":     "<b64 32B>", "kex_key_id":     "<b64 8B>",
  "registered_at_hlc": [wall_ms, counter, "<hex32>"]}
 
 // genesis — signed by Root
@@ -317,6 +370,14 @@ same codes. One certificate, one vocabulary, whichever door it arrives at.
 // revoke — signed by Root, or by a device that holds the authority role
 {"workspace_id": "…", "revoke_id": "…", "grant_id": "…",
  "revoker": "root" | "<uuid>",
+ "revoked_at_hlc": [...]}
+
+// delegate — signed by Root itself, never by another delegate
+{"workspace_id": "…", "delegation_id": "…", "delegate_pk": "<b64 32B>",
+ "delegated_at_hlc": [...]}
+
+// revoke_delegation — signed by Root itself
+{"workspace_id": "…", "revocation_id": "…", "delegation_id": "…",
  "revoked_at_hlc": [...]}
 
 // root_handover — signed by the OUTGOING Root
@@ -342,11 +403,98 @@ member_id_as_32_hex_chars]`. The server stores them and never orders by them.
 cross-checked against SHA-256 of the key beside them. A claimed id that disagrees is
 a forgery attempt, not a variant spelling.
 
+### Two signing keys, by how often they are used
+
+**[W]** A device registers **two** Ed25519 signing keys, and the class byte decides
+which one signs an envelope:
+
+```
+   control_pk    server-read classes — 0x80, 0x81, 0xBF
+                 occasional: a registration, a grant, a rotation
+                 and the auth challenge → Identity
+
+   content_pk    opaque classes — 0x00–0x7F
+                 constant: every note, every edit, every fold
+```
+
+**[S]** The header's `author_key_id` says which key signed, and the server checks it
+matches the class: a server-read envelope carrying the content key id, or an opaque
+one carrying the control key id, is refused `422 author_key_class_mismatch`.
+
+**[S]** This is a **header check, not a signature check**. The server still never
+verifies an envelope signature; it compares two registered ids against one byte.
+
+> Which is the only way the rule could exist here at all, and it is enough. A client
+> verifying a pulled envelope resolves `author_key_id` to a key it learned from the
+> registration, and would refuse a control op signed by a content key even if the
+> server had not.
+
+**[W]** The **auth challenge is signed by the control key** ([Identity](02-identity.md)).
+
+> A device token authorises both planes, so if the hot key could obtain one the split
+> would buy very little. Binding the challenge to the control key keeps the token as
+> cold as the coldest thing it speaks for — used once per session rather than once
+> per keystroke.
+
+> The split is by *frequency*, not by sensitivity. Both keys live on the same device
+> and die with it; neither has a recovery story, because re-enrolling mints new ones.
+> What it buys is that a process holding the key used ten thousand times a day cannot
+> author a permission change, and on a desktop or a long-running service those are
+> very different exposures.
+
+**[P]** A member kind that writes both planes — an automated folder authoring reprise
+and prune ops — holds both keys and gains nothing from the split. It is a person's
+device the separation is for.
+
+### `holder_root_pk`: whose device this is
+
+**[W]** Every registration names the **identity that holds the device**, alongside
+the Workspace Root that signs the certificate. In a Workspace one identity owns, the
+two are the same key. In a shared one they differ: the Workspace's Root admits the
+device, and `holder_root_pk` records whose it is.
+
+**[S]** The server **stores it and never interprets it**. It gates nothing, grants
+nothing, and appears in no check.
+
+> It is attribution, not authorisation — which is exactly why it needs no consent
+> from the holder. The Workspace's Root is asserting a fact about its own Workspace.
+> If a *grant* named an identity, the same field would be authorising a party that
+> never agreed, and it would need a counter-signature and the holder's Root out of
+> its vault to join anything.
+
+**[W]** It is a **public key, and nothing else**. No certificate in this protocol
+carries a name, an email address, a display string, or any other human-readable
+identifier — not beside the holder, not anywhere.
+
+> Certificates go into the log. The log is append-only, replicated to every member
+> device, and never deleted. A name written into one is a name that can never be
+> withdrawn: erasure becomes impossible by construction, and every member of a
+> Workspace learns every other member's real identity whether the deployment wanted
+> that or not.
+>
+> Which is why the field is deliberately only half an answer. It says *these devices
+> belong to one identity*; it does not say who. Mapping a Root to a person is the job
+> of whatever admitted that identity in the first place — a directory, an SSO
+> provider, an HR system — and that is the right place for it, because it is the
+> place that can also forget.
+
+**[C]** Grants stay **device-granular**, and this field does not change that.
+Admitting one of a person's devices and not another is a policy a deployment may
+want — a managed laptop and not a personal tablet — and it stays expressible.
+
+> What the field buys is that "which devices are Alice's" becomes derivable by
+> replaying the log, rather than remembered in whichever admin console happened to
+> issue the grants. Person-level operations — revoke everything Alice holds — are
+> then a loop a client computes from the log, and two clients compute the same one.
+>
+> Without it, membership would be the one fact about a Workspace the log cannot
+> answer, in a design whose whole claim is that the log is the truth.
+
 ### Genesis carries its own founder's registration
 
 **[W]** A genesis certificate embeds a full key block for the device that founded the
-Workspace, and that block **is** that device's registration. The founder writes no
-separate `member_register`.
+Workspace — including its `holder_root_pk` — and that block **is** that device's
+registration. The founder writes no separate `member_register`.
 
 > It has to work this way. The envelope is signed by the founder's key, but nothing
 > earlier in the log says what that key is — genesis is op 1. So the certificate has
@@ -355,7 +503,75 @@ separate `member_register`.
 
 ---
 
-## 6. Roles
+## 6. Delegation: keeping Root cold
+
+Root signs rarely and matters absolutely. Two of the things it signs are not rare at
+all — a registration for every device that joins, a grant for every permission
+change — and a key that must come out of its vault for routine administration is a
+key that ends up living somewhere convenient.
+
+**[W]** A `delegate` names a public key that may exercise **root authority** from
+that op's position. Wherever this specification requires a Root signature, a live
+delegate's signature is equally good — with three exceptions.
+
+```
+   DELEGABLE                          NEVER DELEGABLE
+   ─────────                          ───────────────
+   member_register certificates       workspace_genesis
+   grant certificates, incl. owner    root_handover
+   revoke certificates, incl. owner   vault records → Keys
+```
+
+**[W]** A delegation is created and revoked **only by Root itself**. A delegate
+cannot delegate, and cannot revoke a delegation — its own or another's.
+
+> The three exclusions are what keep the hierarchy from being decorative.
+>
+> **Handover is the remedy for compromise.** A delegate that could hand over turns a
+> warm-key compromise into an unrecoverable one: the attacker moves the Workspace to
+> a key you do not hold, using the very escape hatch you would have used. Root keeps
+> it, and a compromised delegate is then a revoke-and-remint rather than a loss.
+>
+> **Genesis is once.** There is nothing routine to relieve.
+>
+> **The vault is the identity's own recovery**, and a delegate that could rewrite it
+> could lock the identity out of itself.
+>
+> And a delegate cannot mint delegates, or the tree would grow branches Root never
+> authorised and could only prune by handing over.
+
+**[S]** Rule 3 of §7 is unchanged in substance: an `owner` grant is minted and
+revoked under root authority at both ends. A delegate holds that authority, so both
+ends now cost *the same* delegate — the symmetry that rule exists for survives, at a
+lower bar.
+
+**[S]** Where a signature is checked against root authority, the server tries the
+Workspace's **current Root** first, then each delegation **live at that op's
+position**. If none verifies, `422 bad_root_signature`.
+
+**[S]** The verdict is **positional**, exactly like a grant: a certificate signed by
+a delegate is judged against the delegations live where the certificate's op landed,
+not where it is read.
+
+> So revoking a delegation does not retroactively invalidate what it signed, for the
+> same reason revoking a grant does not invalidate the ops it authorised. A
+> registration a delegate issued in March stays valid in June.
+>
+> Which is also the shape of the risk, stated plainly: revoking a delegation stops it
+> signing anything **new**. Everything it already signed stands, and if it was
+> compromised you must go and revoke those things individually — or hand over.
+
+**[S]** A delegation is **disposable**. It has no vault, no recovery path and no
+escrow; losing the key costs one `revoke_delegation` and one `delegate`.
+
+> Which is the reason to prefer this over relaxing who may sign what. Every other key
+> here must be recoverable or an identity dies with it — Root, the master wrap key,
+> the wrapping secret. A delegate is the first key in the system that may simply be
+> thrown away, so it adds authority without adding a way to be locked out.
+
+---
+
+## 7. Roles
 
 **[P]** The profile supplies a **role table**: a set of role tokens and, for each,
 which op classes it permits.
@@ -415,7 +631,7 @@ the profile's set is refused `unknown_member_kind`.
 
 ---
 
-## 7. The two bars
+## 8. The two bars
 
 Not every route needs the same thing. Every Workspace-scoped route sits at one of
 exactly two levels.
@@ -423,7 +639,7 @@ exactly two levels.
 ```
   ┌─────────────────────────────────────────────────────────────────┐
   │  BAR 1 — MEMBER-GET                                             │
-  │  any UNREVOKED device token whose Root derives the Workspace    │
+  │  any UNREVOKED device registered in this Workspace              │
   │  ── no permission grant required ──                             │
   │                                                                 │
   │  GET /ops   GET /members   GET /keywraps/me   WS /signal        │
@@ -449,10 +665,10 @@ credential for a bar to test:
    POST /v1/members             a Root-signed certificate inside the body
 ```
 
-> `POST /v1/members` still evaluates the predicate, but against the Workspace its
-> *certificate* names and the `root_pk` its body carries — which is what lets a
-> founding device register keys for a Workspace that does not exist yet. The bars
-> describe credentials, and that route presents none.
+> `POST /v1/members` evaluates neither bar. It is gated by the certificate in its
+> body — creation on the founding branch, an existing Workspace and its current Root
+> on the joining one ([Identity](02-identity.md)). The bars describe credentials, and
+> that route presents none.
 
 **[S]** "Revoked" is defined **per Workspace**: a device is revoked in a Workspace
 iff it has at least one grant there and none live there. Revoked in one Workspace
@@ -470,14 +686,13 @@ bar 1.
 ```
 
 > The pre-grant case is what lets an enrolling device pull and replay the control log
-> before it holds any permission — which it must, to discover whether the Workspace
-> exists at all. It reopens nothing: reads were already limited by reachability to
-> Workspaces the device's own Root derives, and the denial-of-service concern lives
-> on the write path.
+> before it holds any permission — which it must, to discover what it has joined. It
+> reopens nothing: reads are already limited to Workspaces this device is registered
+> in, and a registration is a Root-signed certificate somebody deliberately issued.
 
 ---
 
-## 8. Stage 2 — permission checks on ordinary ops
+## 9. Stage 2 — permission checks on ordinary ops
 
 This is where the [append pipeline](01-the-log.md#the-pipeline) consults this layer,
 for every class but control.
@@ -493,7 +708,7 @@ for every class but control.
 
 ---
 
-## 9. Stage 4 — verifying control ops
+## 10. Stage 4 — verifying control ops
 
 **[S]** Framing and decoding first, in this order:
 
@@ -579,11 +794,16 @@ with the payload's, **or** a device authority is not the posting author.
 > is a forgery attempt, not a spelling. And a device cannot post a grant claiming some
 > *other* device approved it.
 
-**[S]** `unknown_grantee` covers: no such device; a device certified by a different
-Root; a device with no accepted registration.
+**[S]** `unknown_grantee` covers: no such device; a device with no accepted
+registration **in this Workspace**.
 
 > A grant is never held as a dangling forward reference. If the grantee is not already
 > established in the log, the grant means nothing.
+>
+> Note what is *not* on that list: whose device it is. A grant may name any device
+> registered here, whatever identity holds it. That is what makes a Workspace
+> shareable, and it is safe because the registration it depends on was signed by this
+> Workspace's own Root.
 
 ### `revoke`
 
@@ -607,7 +827,35 @@ failed revocation from an invalid grantee.
 
 > Nothing re-judges a grant that was valid at the position it was signed at. That is
 > what makes a late-arriving op honest rather than retroactively illegitimate — and it
-> is the same rule as §10's positional verdict, seen from the other end.
+> is the same rule as §11's positional verdict, seen from the other end.
+
+### `delegate` and `revoke_delegation`
+
+**[S]** Both are **signed by Root itself**. A signature by a live delegate is refused
+here, and only here, under the same code — a delegate that could delegate is a
+delegate that could outlive its own revocation.
+
+**[S]** `delegate`, in order:
+
+| Refusal | Cause |
+|---|---|
+| `422 cert_workspace_mismatch` | names another Workspace |
+| `422 malformed_root_pk` | `delegate_pk` is not 32 bytes |
+| `422 bad_root_signature` | the current Root did not sign these bytes |
+| `409 delegation_id_already_used` | a *different* op already used this id |
+
+**[S]** `revoke_delegation`, in order: `cert_workspace_mismatch`,
+`bad_root_signature`, `unknown_delegation`, `already_revoked`.
+
+**[S]** `unknown_delegation` is distinct from `unknown_grant`, so a client can tell a
+failed delegation revocation from a failed grant revocation.
+
+**[S]** A delegation MUST NOT name a key that is any device's registered signing key
+in this Workspace, and MUST NOT name the Workspace's current Root.
+
+> Both would blur two authorities into one key. A device whose signing key also held
+> root authority could mint its own grants, and rule 3's symmetry would be a
+> formality. Root naming itself is simply a no-op with a revocation attached.
 
 ### `root_handover`
 
@@ -636,7 +884,7 @@ still be a registered device: `member_register_not_first` applies unchanged.
 registered, every live grant stays live, and every past op keeps the verdict its
 position gave it.
 
-> The positional rule of §10 already decides this, and it decides it the only way
+> The positional rule of §11 already decides this, and it decides it the only way
 > that is coherent: nothing re-judges a document that was valid where it was signed.
 > A handover that silently invalidated every grant its predecessor issued would lock
 > the Workspace out of itself at the exact moment it was being rescued.
@@ -668,7 +916,7 @@ Details of what a rotation means are in [Keys](04-keys.md).
 
 ---
 
-## 10. What a control op causes
+## 11. What a control op causes
 
 **[S] A genesis** brings the Workspace into being for the server's own refusals:
 content writes stop failing `workspace_not_created`.
@@ -720,6 +968,46 @@ written once and never moved.
 > never re-checked. Without it, a revoked device keeps learning that activity is
 > happening in a Workspace it has been removed from.
 
+### What revocation does not reach
+
+**[S]** The server-side cut is **immediate and total**. From the revoking position a
+revoked device answers `no_live_grant` on every bar-1 route — it cannot pull new ops,
+and it cannot pull old ones either. Its refresh tokens are dead and its sockets are
+closed. Only an unexpired access token outlives the revoke, and every route re-tests
+the bar, so it buys nothing.
+
+**[W]** It is **not a cryptographic cut**. The device keeps every epoch key it ever
+held and every op it already pulled, and both stay readable to it for ever. Nothing
+in an append-only log can be unsent, and no rule here pretends otherwise.
+
+**[C]** A revoke SHOULD therefore be followed by a `rotate`.
+
+> Until one lands, content written **after** the revocation is sealed under an epoch
+> key the revoked device still holds, and its confidentiality rests entirely on the
+> server declining to serve it.
+>
+> That is a guarantee this specification refuses to make anywhere else. The threat
+> model says a hostile or compromised server can withhold but never grant; leaning on
+> it to withhold from a revoked device inverts exactly that, and makes a policy check
+> the only thing standing between a removed employee and next month's writes — one
+> stolen backup, one colluding member, one server bug away from nothing.
+>
+> Rotate and the cut becomes arithmetic instead: the wrap set for the new epoch is
+> minted for the members who hold grants when it is minted, and the revoked device is
+> not among them. It never receives `K(w, n+1)` and no amount of access would help.
+>
+> What no rotation reaches is the past. Everything up to the revoking position was
+> legitimately readable when it was read and stays readable, on whatever disk it
+> landed on. Revocation ends a relationship; it does not rewrite one.
+
+**[S]** A revoke closes grants, never the **registration**. A revoked device remains a
+registered member — it still appears in `GET /v1/w/{w}/members`, and it still passes
+the access gate (§3.2) while failing bar 1.
+
+> Which is why `no_registration` and `no_live_grant` are different codes. *You were
+> never let in* and *you were let in and then removed* are different facts about a
+> device, and only the second one leaves evidence in the log.
+
 **[S] A root handover** moves the Workspace's **current Root**, and nothing else. The
 founding Root — the one the Workspace id derives from — is unchanged and unchangeable.
 
@@ -738,11 +1026,34 @@ still yields the retired key.
 > connect them. A client that hands over without rewriting the vault has published a
 > succession it can no longer recover into.
 
+**[S] A delegation** becomes live **at that op's position**, and the verdict is
+positional in both directions — a certificate it signed is judged against the
+delegations live where that certificate's own op landed.
+
+```
+   log position:   … 12 ── 13 ── 14 ── 15 ── 16 ── 17 ── 18 ── 19 …
+                          ▲                             ▲
+                      delegate                    revoke_delegation
+                      at seq 13                      at seq 18
+
+   a certificate signed by that key, in an op at position S,
+   carries root authority  iff  13 < S < 18
+```
+
+**[S]** A `revoke_delegation` closes that window at its own position, **immutably**,
+and **changes nothing the delegation already signed**. Registrations it issued stay
+accepted; grants it minted stay live.
+
+> Which is the honest shape of the risk. Revoking a delegation stops it signing
+> anything new and does not undo a thing. If it was compromised rather than merely
+> retired, the grants and registrations it issued have to be found and revoked one by
+> one — or the Workspace hands over, which is why Root keeps that.
+
 **[S] A rotate** creates a new key epoch → [Keys](04-keys.md).
 
 ---
 
-## 11. Repeats, again
+## 12. Repeats, again
 
 [The Log](01-the-log.md) established that re-posting an op is free. Four consequences
 land here, and all four are required:

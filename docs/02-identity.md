@@ -270,15 +270,16 @@ session to present.
 
 ```json
 → {"member_id": "<uuid>",
-   "sign_pk":   "<b64 32B>",     // Ed25519 public key — signs ops
-   "kex_pk":    "<b64 32B>",     // X25519 public key — receives sealed keys
-   "key_id":    "<b64 8B>",      // optional; must equal the derivation if sent
+   "control_pk": "<b64 32B>",    // Ed25519 — server-read classes, and the challenge
+   "content_pk": "<b64 32B>",    // Ed25519 — opaque classes
+   "kex_pk":     "<b64 32B>",    // X25519  — receives sealed keys
+   "key_ids":    { … },          // optional; must equal the derivations if sent
    "cert_b64":  "<b64>",         // member_register OR workspace_genesis
    "cert_sig_b64": "<b64 64B>",  // Root's signature over it
    "root_pk_b64":  "<b64 32B>"}  // the Root that signed
 
-← {"member_id": "…", "sign_pk": "…", "key_id": "…", "kex_pk": "…",
-   "chained": false}
+← {"member_id": "…", "control_pk": "…", "content_pk": "…", "kex_pk": "…",
+   "key_ids": { … }, "chained": false}
 ```
 
 **[S]** `201` on create; **`200` on an identical repeat**, with the same body.
@@ -286,7 +287,7 @@ session to present.
 **[S]** Checks, in order:
 
 ```
-   1. the certificate parses, and names this member_id, sign_pk and kex_pk
+   1. the certificate parses, and names this member_id and all three keys
    2. both key ids derive from the keys beside them
    3. root_pk DERIVES the Workspace the certificate names
    4. the signature verifies under root_pk
@@ -319,17 +320,17 @@ the log makes it true.
 > signed by the very key being registered. Presenting it here buys the ordering, not
 > the authority.
 
-**[S]** The server retains the **certifying `root_pk`** beside the device record. It
-is what every later reachability question about this device is answered from: *does
-this device's Root derive that Workspace*.
+**[S]** The server retains **no Root beside the device record**. Which Workspaces a
+device may address is answered by its accepted registrations
+([Authority](03-authority.md)), one per Workspace.
 
-> Stored rather than recomputed because the alternative is asking which registrations
-> have landed, and that answer changes over time. A device enrolling into a Workspace
-> that does not exist yet must still be able to address it — otherwise the founding
-> device cannot read the Workspace it is in the middle of creating.
+> A device does not have *a* certifying Root. In a shared Workspace it is registered
+> by that Workspace's Root, so a device joining two Workspaces owned by two identities
+> is certified by two different keys. Anything stored per device would be wrong for
+> one of them.
 
-**[S]** `key_id` is **derived by the server** from `sign_pk` — the first 8 bytes of
-its SHA-256. A client's claim is cross-checked, never stored.
+**[S]** Every key id is **derived by the server** — the first 8 bytes of the key's
+SHA-256. A client's claim is cross-checked, never stored.
 
 > A key id indexes into a device's keys. Letting the client choose it would let one
 > key occupy another's slot.
@@ -340,7 +341,7 @@ one place it is informative — it separates a shell from a registered device.
 
 | Refusal | Cause |
 |---|---|
-| `422 malformed_sign_pk` | not 32 bytes |
+| `422 malformed_sign_pk` | `control_pk` or `content_pk` is not 32 bytes |
 | `422 malformed_kex_pk` | not 32 bytes |
 | `422 malformed_key_id` | not base64, or not 8 bytes |
 | `422 key_id_not_derived_from_sign_pk` | the claim disagrees with the derivation |
@@ -365,7 +366,7 @@ here.
 > path, and the remedy is identical.
 
 **[S]** `member_id_already_registered` covers: the id exists with a different
-`sign_pk`; with a stored `kex_pk` that differs from the one supplied; **and** with no
+either signing key; with a stored `kex_pk` that differs from the one supplied; **and** with no
 stored `kex_pk` while one is supplied. A stored sealing key is never upgraded in
 place. Omitting `kex_pk` when one is stored is an identical repeat and answers `200`.
 
@@ -404,8 +405,9 @@ existence check runs first**, so sweeping through invented ids creates no counte
 ← {"access_token": "…", "refresh_token": "…", "token_type": "bearer"}
 ```
 
-**[W]** The signature covers the member id **and** the nonce, under a dedicated
-signing domain — see [Keys](04-keys.md) for the exact construction.
+**[W]** The signature is by the device's **control key** ([Authority](03-authority.md)),
+and covers the member id **and** the nonce, under a dedicated signing domain — see
+[Keys](04-keys.md) for the exact construction.
 
 ```
         signed:   [ member id ] [ nonce ]
@@ -451,20 +453,25 @@ different device, or naming a device that does not exist.
 **Credential:** a device token, unrevoked.
 
 ```json
-← {"members": [{"member_id": "…", "sign_pk": "…",
-                "key_id": "…", "kex_pk": "…"}]}
+← {"members": [{"member_id": "…", "holder_root_pk": "…",
+                "control_pk": "…", "content_pk": "…", "kex_pk": "…",
+                "key_ids": { … }}]}
 ```
 
 **[S]** **Scoped to the Workspace in the path**, in both senses — the path selects it
 and the result reflects it. A device appears **iff a Root-signed registration naming
-*this* Workspace has been accepted for it**.
+*this* Workspace has been accepted for it**, whatever identity holds it.
 
 ```
-   one identity
-   ├── laptop  registered in W1 and W2   → appears in both lists
-   ├── phone   registered in W1 only     → appears in W1's list only
-   └── tablet  shell, never accepted     → appears in neither
+   Workspace W1
+   ├── alice's laptop   registered in W1 and W2   → appears in both lists
+   ├── alice's phone    registered in W1 only     → appears in W1's list only
+   ├── bob's laptop     registered in W1 only     → appears, held by another Root
+   └── alice's tablet   shell, never accepted     → appears in neither
 ```
+
+**[S]** Entries carry the `holder_root_pk` from the registration, so a caller can
+group a Workspace's devices by the identity holding them without asking anyone.
 
 **[S]** Ordered by raw `member_id` bytes ascending, so two implementations return the
 same page for the same state.
@@ -485,7 +492,7 @@ the underlying index, and because device management is the obvious consumer.
 
 | Refusal | Cause |
 |---|---|
-| `403 workspace_not_reachable` | this device's Root does not derive this Workspace |
+| `403 no_registration` | this device holds no accepted registration here |
 | `403 no_live_grant` | this device is revoked here |
 
 ---

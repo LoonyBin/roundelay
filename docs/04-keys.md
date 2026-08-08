@@ -861,7 +861,7 @@ for an epoch already published is refused.
 **[S]** Refusals, in order:
 
 ```
-   workspace_not_reachable ─► malformed_key_epoch ─► no_live_grant
+   no_registration ─► malformed_key_epoch ─► no_live_grant
      ─► keywrap_requires_owner ─► malformed_escrow_wrap
      ─► per entry: malformed_keywrap · malformed_kex_key_id
                    unknown_keywrap_member · kex_key_id_not_registered
@@ -917,6 +917,18 @@ sealed at any past epoch may still need opening.
 **[S]** **Useless without the wrapping secret.** An escrow wrap opens only under the
 master wrap key, which exists only inside the vault record.
 
+**[S]** In a **shared** Workspace the escrow wraps open only under the *founding*
+identity's master wrap key. A member holding a device registered by that Workspace's
+Root, but held by their own ([Authority](03-authority.md)), has member wraps and
+nothing else.
+
+> Which means a member of somebody else's Workspace cannot recover a fresh device
+> into it from their own credential: their vault holds their Root, not this
+> Workspace's master wrap key. An owner has to mint them wraps, exactly as at first
+> enrolment. That is the right answer for a Workspace a company owns — losing a laptop
+> is an IT ticket, not a self-service reset — but it is a fact about shared Workspaces
+> worth knowing before it is discovered.
+
 > Anyone who can already open these can already open Root — which is why the bar is
 > deliberately low, and why this route is **not** rate-limited or audited the way the
 > vault fetch is. The vault route serves the material a guess is tested against, so
@@ -949,7 +961,7 @@ This is the route that makes a fresh device work with **no second device online*
 
 | Refusal | Cause |
 |---|---|
-| `403 workspace_not_reachable` | not a Workspace this device's Root reaches |
+| `403 no_registration` | this device is not registered in this Workspace |
 | `403 no_live_grant` | no live permission here |
 
 ---

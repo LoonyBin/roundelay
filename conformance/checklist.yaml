@@ -430,18 +430,92 @@ items:
   spec: "docs/01-the-log.md"
   subject: server
   observable: black-box
-  codes: [invalid_credential, workspace_not_reachable, no_live_grant, role_forbids_op_class, keywrap_requires_owner]
+  codes: [invalid_credential, no_registration, no_live_grant, role_forbids_op_class, keywrap_requires_owner]
   test: tests/conformance/test_authz_matrix.py::test_full_matrix
 
 - id: CONF-AUTHZ-002
   requirement: >
-    A Workspace id outside the profile's reachable set answers 403
-    workspace_not_reachable on every /v1/w/{w}/… route, before any other check.
+    A device with no accepted registration in a Workspace answers 403 no_registration
+    on every Workspace-scoped device route, before any other check.
   spec: "docs/03-authority.md"
   subject: server
   observable: black-box
-  codes: [workspace_not_reachable]
-  test: tests/conformance/test_authz_matrix.py::test_reachability_first
+  codes: [no_registration]
+  test: tests/conformance/test_authz_matrix.py::test_access_gate_first
+
+- id: CONF-AUTHZ-013
+  requirement: >
+    The access gate is per Workspace: a device registered in W1 and not W2 is served
+    W1 and answers 403 no_registration for W2, though one Root founded both.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [no_registration]
+  test: tests/conformance/test_authz_matrix.py::test_access_is_per_workspace
+
+- id: CONF-AUTHZ-014
+  requirement: >
+    An author's first op in a Workspace is exempt from the access gate: a
+    member_register naming the author, and a workspace_genesis, are both accepted from
+    a device holding no registration there.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_authz_matrix.py::test_first_op_exempt
+
+- id: CONF-AUTHZ-015
+  requirement: >
+    The exemption is not a hole: a member_register whose certificate was not signed by
+    this Workspace's current Root answers 422 bad_root_signature.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [bad_root_signature]
+  test: tests/conformance/test_authz_matrix.py::test_first_op_still_certified
+
+# ── Shared Workspaces ────────────────────────────────────────────────────────
+
+- id: CONF-SHARE-001
+  requirement: >
+    A device whose holder_root_pk differs from the Workspace's Root is registered,
+    granted and able to write, given a registration this Workspace's Root signed.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_sharing.py::test_cross_identity_member
+
+- id: CONF-SHARE-002
+  requirement: >
+    holder_root_pk is stored and returned verbatim on GET /v1/w/{w}/members, and the
+    server branches on it nowhere.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_sharing.py::test_holder_is_opaque
+
+- id: CONF-SHARE-003
+  requirement: >
+    Grants stay device-granular across identities: granting one of a holder's devices
+    and not another is accepted, and the ungranted one is refused role_forbids_op_class
+    or no_live_grant.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [no_live_grant]
+  test: tests/conformance/test_sharing.py::test_per_device_grants_across_holders
+
+- id: CONF-SHARE-004
+  requirement: >
+    No certificate carries a human-readable identifier: registration payloads are
+    refused malformed_control_payload on any field outside the declared set.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [malformed_control_payload]
+  test: tests/conformance/test_sharing.py::test_no_names_in_certificates
 
 - id: CONF-AUTHZ-003
   requirement: >
@@ -1349,7 +1423,7 @@ items:
 
 - id: CONF-PROF-003
   requirement: >
-    Under a derived reachability policy, workspace ids are UUID-v5 over the frozen
+    Under a derived creation policy, workspace ids are UUID-v5 over the frozen
     namespaces with the 32 raw bytes of the founding Root public key, asserted
     against frozen vectors.
   spec: "docs/03-authority.md"
@@ -1596,3 +1670,131 @@ items:
   observable: black-box
   codes: [invalid_credential]
   test: tests/conformance/test_admission.py::test_header_scoped_to_registration
+
+# ── Delegation ───────────────────────────────────────────────────────────────
+
+- id: CONF-DELG-001
+  requirement: >
+    A delegate signed by a live delegate rather than by Root itself answers 422
+    bad_root_signature; the same for revoke_delegation.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [bad_root_signature]
+  test: tests/conformance/test_delegation.py::test_delegate_cannot_delegate
+
+- id: CONF-DELG-002
+  requirement: >
+    A member_register, grant or revoke certificate signed by a live delegate is
+    accepted exactly as a Root-signed one, including an owner grant and its revoke.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_delegation.py::test_delegate_holds_root_authority
+
+- id: CONF-DELG-003
+  requirement: >
+    A workspace_genesis, root_handover or vault write signed by a live delegate is
+    refused; only Root itself is accepted for those three.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [bad_root_signature, bad_vault_signature]
+  test: tests/conformance/test_delegation.py::test_three_exclusions
+
+- id: CONF-DELG-004
+  requirement: >
+    The delegation verdict is positional: a certificate signed by a delegate is judged
+    against the delegations live where that certificate's own op landed, so a
+    revoke_delegation invalidates nothing already signed.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_delegation.py::test_positional_and_not_retroactive
+
+- id: CONF-DELG-005
+  requirement: >
+    A second op reusing a delegation_id answers 409 delegation_id_already_used, and a
+    revoke_delegation naming no known delegation answers 422 unknown_delegation.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [delegation_id_already_used, unknown_delegation]
+  test: tests/conformance/test_delegation.py::test_delegation_ids
+
+- id: CONF-DELG-006
+  requirement: >
+    A delegate naming a device's registered signing key in this Workspace, or the
+    Workspace's current Root, is refused.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [bad_root_signature, malformed_root_pk]
+  test: tests/conformance/test_delegation.py::test_delegate_key_disjoint
+
+# ── Device key split ─────────────────────────────────────────────────────────
+
+- id: CONF-DKEY-001
+  requirement: >
+    A server-read envelope carrying the content key id, and an opaque envelope
+    carrying the control key id, each answer 422 author_key_class_mismatch.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [author_key_class_mismatch]
+  test: tests/conformance/test_device_keys.py::test_key_matches_class
+
+- id: CONF-DKEY-002
+  requirement: >
+    The auth challenge is answered by the control key: a signature by the content key
+    answers 401 bad_member_challenge.
+  spec: "docs/02-identity.md"
+  subject: server
+  observable: black-box
+  codes: [bad_member_challenge]
+  test: tests/conformance/test_device_keys.py::test_challenge_takes_control_key
+
+- id: CONF-DKEY-003
+  requirement: >
+    Registration carries both signing keys and all three key ids are the server's own
+    derivations; a claimed id that disagrees answers 422
+    key_id_not_derived_from_sign_pk.
+  spec: "docs/02-identity.md"
+  subject: server
+  observable: black-box
+  codes: [key_id_not_derived_from_sign_pk]
+  test: tests/conformance/test_device_keys.py::test_both_keys_registered
+
+# ── Revocation reach ─────────────────────────────────────────────────────────
+
+- id: CONF-REVK-001
+  requirement: >
+    A revoked device is refused no_live_grant on every bar-1 route, for old ops as
+    well as new, and its refresh tokens no longer refresh.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [no_live_grant, invalid_refresh_token]
+  test: tests/conformance/test_revocation.py::test_revoked_cannot_pull
+
+- id: CONF-REVK-002
+  requirement: >
+    A revoke closes grants and not the registration: the device still appears in GET
+    /v1/w/{w}/members and still passes the access gate while failing bar 1.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [no_live_grant]
+  test: tests/conformance/test_revocation.py::test_registration_survives_revoke
+
+- id: CONF-REVK-003
+  requirement: >
+    A rotate after a revoke mints the new epoch's wrap set without the revoked device,
+    so no wrap for the new epoch is served to it.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_revocation.py::test_rotate_excludes_revoked

@@ -599,7 +599,7 @@ batch. Stage 5 runs once every op has passed 2–4.
 
 | Refusal | Cause |
 |---|---|
-| `403 workspace_not_reachable` | this user cannot address this Workspace |
+| `403 no_registration` | this device is not registered in this Workspace |
 | `413 batch_too_large` | more ops than the advertised ceiling |
 | `422 malformed_base64` | not base64 |
 | `422 truncated_envelope` | under 158 bytes — no header |
