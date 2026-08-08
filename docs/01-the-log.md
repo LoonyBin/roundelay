@@ -61,7 +61,7 @@ signature.
 | 38 | 16 | `author_member_id` | which device wrote it |
 | 54 | 8 | `author_key_id` | which of that device's keys signed it |
 | 62 | 8 | `author_seq` | position in *this author's* chain, from 1 |
-| 70 | 32 | `prev_author_hash` | hash of this author's previous envelope |
+| 70 | 32 | `prev_author_hash` | hash of this author's previous envelope — §5 |
 | 102 | 32 | `observed_head` | reserved; all-zero in v1 |
 | 134 | 24 | `nonce` | encryption nonce; all-zero when unsealed |
 
@@ -73,9 +73,45 @@ envelope's own length gives the body's.
               = total length − 222
 ```
 
+**[W]** An **unsealed** op — suite `0x00` — carries `key_epoch` 0. The field names the
+key generation that *sealed* the body, and nothing sealed it.
+
+**[C]** A reader MUST refuse a non-zero `key_epoch` on an unsealed op, exactly as it
+refuses a non-zero `nonce` there. The server judges neither (§8), and the epoch floor
+is a rule about sealed ops ([Keys](04-keys.md#the-epoch-floor-on-writes)).
+
+**[C]** **The `observed_head` rule.** `observed_head` is reserved in v1: a reader MUST
+refuse an envelope whose `observed_head` is not all-zero. The server stores it verbatim
+and never judges it (§8).
+
+> Reserved means reserved on both sides. A field the server ignores and readers accept
+> is one a future version can no longer give a meaning to — something is already in it
+> somewhere, and two readers converge on different state. Refusing now is what keeps
+> the field spendable later.
+
 **[W]** The signature covers `header || body` and is made with the author's
 signing key. Its exact construction is in [Keys](04-keys.md); what matters here is
 that **the server does not check it** (§8).
+
+### The envelope hash
+
+**[W]** The **envelope hash** is SHA-256 over the complete envelope bytes —
+`header || body || signature`, exactly as stored and served. Nothing is prefixed,
+appended or re-serialised: bare SHA-256 over those bytes. Where a JSON payload
+carries one it is lowercase hex, 64 characters.
+
+Three things name it, and all three mean this construction: `prev_author_hash`
+(§5), a prune target's `envelope_hash` (§7), and the attestation an extension owes
+for any op it hides (§3, rule 5).
+
+> **This is the one construction in this layer that is not domain-framed**, where
+> every other one is ([Keys](04-keys.md#the-framing-rule)). Framing stops a signature
+> over one document being replayed as a signature over another. This hash
+> **identifies bytes; it does not authenticate them** — the authentication is the
+> signature *inside* the very bytes being hashed, already framed under the `op`
+> domain, and prefixing the digest input would add nothing to it. It is also the
+> precedent `prev_control_hash` already set: bare SHA-256 over the bytes it names
+> ([Authority](03-authority.md#the-control-chain)).
 
 ### The body: framing and padding
 
@@ -494,6 +530,24 @@ gaps ever. Each op carries the hash of its author's previous envelope, so a
 device's output is a tamper-evident chain. A gap means a device's chain is broken
 and something is wrong.
 
+**[W]** That link is `prev_author_hash`: the envelope hash (§2) of this author's
+previous envelope **in this Workspace**. An op with `author_seq` 1 carries 32 zero
+bytes there.
+
+**[C]** All-zero is first-op-only, **in both directions**. A reader MUST refuse an
+all-zero `prev_author_hash` on an op whose `author_seq` is greater than 1, and a
+non-zero one on an op whose `author_seq` is 1. The rule is the **reader's**: the
+server checks neither (§8).
+
+> The control chain's zero-link rule, one layer down
+> ([Authority](03-authority.md#the-control-chain)), and it earns its place for the
+> same reason. A reader legitimately meets holes in an author's chain, because a
+> prune hides ops from the default read (§7) — so "this link resolves to nothing I
+> hold" is not on its own evidence of anything. What the two directions protect is
+> the chain's *start*: an op that claims to begin one must be that author's first,
+> and that author's first must claim nothing before it. Otherwise a chain served
+> from the middle asserts its own beginning and nothing contradicts it.
+
 **`seq` — the transport position.** Assigned by the server when an op is stored.
 It is a **cursor and nothing else**: never causality, never an input to merging,
 never evidence of anything. Holes in it are meaningless.
@@ -548,7 +602,7 @@ earlier ops in the same batch are visible to later ones.
 
 ### The pipeline
 
-Validation runs in five stages. This is where the layers meet, so the diagram
+Validation runs in six stages. This is where the layers meet, so the diagram
 marks which layer owns each stage:
 
 ```
@@ -566,7 +620,7 @@ marks which layer owns each stage:
    ┌── STAGE 2 ─────────────────────────── Authority and 4 ───┐
    │  every class but control:                               │
    │  does the Workspace exist? does the role allow it?      │
-   │  is the key epoch current enough?                       │
+   │  is a sealed op's key epoch current enough?             │
    └────────────────────────┬────────────────────────────────┘
                             ▼
    ┌── STAGE 3 ─────────────────────────────────── The Log ──┐
@@ -766,6 +820,28 @@ each contributing author's chain, not from the front.
 and their sequence number (to locate the hole), and the envelope hash (so a
 verifier can chain past it).
 
+**[W]** A target's `seq` and `author_seq` are integers in `1 … 2⁶³−1`. Both count from
+1, so neither has a zeroth value, and one outside the range is
+`malformed_prune_payload` — it names no op that could exist.
+
+**[W]** A target's `envelope_hash` is the envelope hash of §2 — SHA-256 over that
+op's complete envelope bytes, unframed.
+
+**[S]** The server computes it the same way, over the bytes it holds at that
+`seq`, to decide `prune_target_attestation_mismatch`. **One construction, both
+sides of the wire.** Where it holds no bytes — a `hard_prune` already destroyed
+them — it compares against the hash the **tombstone** retains instead, and a
+disagreement is `prune_target_attestation_mismatch` on **either type**. What a
+*match* then does is the type's own rule: for `hard_prune`, the already-gone rule
+below; for `prune`, `prune_target_already_reprised` in stage 3. There is no path on
+which a target's attestation goes unchecked.
+
+> The server computes this one, where it verifies no signature at all (§8), which
+> is why the construction is pinned here rather than left to whoever verifies. Two
+> implementations hashing different bytes — the header alone, the unpacked
+> payload, a re-serialisation — refuse each other's *honest* prunes under a code
+> that means forgery, and the author is given nothing to tell the two apart.
+
 **[W]** Three **shape** rules bind author and reader alike, refused wherever the
 bytes are held:
 
@@ -796,41 +872,67 @@ every device that enrols after it, and it is charged for like anything else. A
 ```
 
 **[S]** The server drops the **envelope bytes** for each target and keeps a
-**tombstone**: op id, transport position, author, `author_seq`, and the position of
-the prune that reprised it. Three things depend on the tombstone surviving:
+**tombstone**: every other fact on that op's row — transport position, Workspace,
+class, key epoch, op id, author, author key id, `author_seq`, and the position of
+the prune that reprised it — **plus the envelope hash**, computed from the bytes it
+is about to drop. That is the per-op row of
+[Retained state](reference/retained-state.md) with the bytes removed and the hash
+added; the two enumerations are **one list**, and a field added to either belongs
+in both. Four things depend on the tombstone surviving:
 
 ```
-   uniqueness   (workspace, author, op_id) still refuses a re-append,
-                so a destroyed op cannot be resurrected as a new one
+   uniqueness    (workspace, author, op_id) still refuses a re-append,
+                 so a destroyed op cannot be resurrected as a new one
 
-   positions    seq stays stable, so every `since` cursor keeps working
+   positions     seq stays stable, so every `since` cursor keeps working
 
-   audit        the gap has a name, and the op that authorised it is findable
+   audit         the gap has a name, and the op that authorised it is findable
+
+   attestation   the envelope hash outlives the bytes, so a later hard_prune
+                 naming the same target is still checked, not waved through
 ```
 
 > Which is also the honest limit on what is reclaimed. A tombstone is a few dozen
-> bytes and an envelope is a size class; hard-pruning recovers the payload, never the
-> row. A Workspace of a hundred million tiny ops does not shrink to nothing.
+> bytes, thirty-two of which are now the hash, and an envelope is a size class;
+> hard-pruning recovers the payload, never the row. A Workspace of a hundred million
+> tiny ops does not shrink to nothing.
 
-**[S]** Four rules, each fail-closed:
+**[S]** Five rules, each fail-closed:
 
 | Rule | Refusal |
 |---|---|
+| the position exists — some op was stored there | `prune_target_not_found` |
 | the target is already marked reprised | `hard_prune_target_not_reprised` |
 | the target is not itself a `0x81` op | `hard_prune_target_is_prune` |
-| `envelope_hash` matches the op held at that `seq` | `prune_target_attestation_mismatch` |
+| `envelope_hash` matches what is held at that `seq` — the stored bytes, or the tombstone's hash where they are gone | `prune_target_attestation_mismatch` |
 | the shape rules of the prune payload, unchanged | `prune_targets_empty`, `prune_duplicate_target`, `prune_targets_too_many` |
 
-**[S]** A target whose bytes are **already gone** is not an error. It is the
-concurrent case — two folders reclaiming the same span — and it applies nothing a
-second time, exactly like a repeat.
+**[S]** *Never assigned* and *already gone* are **different verdicts**. A `seq` no
+op was ever stored at is `prune_target_not_found` — the same code a soft prune
+raises, for the same cause, and not a `hard_prune`-specific one. A `seq` whose
+tombstone is present **is found**: the rules above judge it on the tombstone, and
+`prune_target_not_found` is the wrong answer for it.
+
+**[S]** A target whose bytes are **already gone** is not an error, and it is not
+unchecked either. Its `envelope_hash` is compared with the hash the tombstone
+retains, exactly as a present target's is compared with the hash of the bytes still
+held, and a disagreement is `prune_target_attestation_mismatch` on either path. A
+target that **matches** applies nothing a second time — the concurrent case, two
+folders reclaiming the same span, and exactly like a repeat.
+
+> Otherwise the second `hard_prune` of a span is the one place in this layer where a
+> false attestation lands silently. With nothing retained, a server holding no bytes
+> can only accept every hash or refuse every repeat — and refusing every repeat
+> breaks the concurrent case the rule exists to allow. Thirty-two bytes per destroyed
+> op buys the third answer, and keeps *checked* from quietly meaning *checked while
+> the bytes happened to still be there*.
 
 **[S]** `include_reprised=true` no longer returns a hard-pruned op. The position is
 absent from the page, and the `hard_prune` that removed it is in the log.
 
 #### Why prune ops may never be targets
 
-**[W]** Rule 2 is not tidiness. A soft prune carries `envelope_hash` for every op it
+**[W]** Rule 3 is not tidiness. A soft prune carries `envelope_hash` for every op it
 marks, and that hash is *the only thing* that lets a verifier chain past the hole it
 created, above. Destroy the prune and every hole it authorised becomes unexplainable:
 a reader meets a gap in an author's chain with nothing to bridge it and no signed
@@ -1010,7 +1112,7 @@ decoding plus the transition window in (4) already covers.
 
 | Refusal | Cause |
 |---|---|
-| `prune_target_not_found` | no such position |
+| `prune_target_not_found` | no op was ever stored there |
 | `prune_target_is_control` | control ops are the permission record |
 | `prune_target_is_prune` | a prune is itself the evidence of removal |
 | `prune_target_is_server_read` | any other class with bit 7 set |
@@ -1047,13 +1149,14 @@ already commits them to.
 | `prev_author_hash` | chain verification is reader state, built from the log that reader has seen |
 | `observed_head` | reserved in v1 |
 | the `nonce` on an unsealed op | a content-blind server has no basis to judge it |
+| `key_epoch` on an unsealed op | nothing was sealed; readers hold the rule (§2) |
 | `author_key_id` against the registered key | a device may rotate its signing key; the log is the authority |
 | padding on opaque bodies (bit 7 clear) | it never unpacks them |
 
 **[S]** These fields are parsed for indexing and stored verbatim. **A replacement
 MUST NOT turn any of them into a refusal.**
 
-**[C]** Signature verification, chain verification and the `observed_head` rule
+**[C]** Signature verification, chain verification and the `observed_head` rule (§2)
 are the **reader's** obligations, and a client MUST perform all of them.
 
 > This is the property most likely to be "fixed" into an interoperability failure.
@@ -1066,7 +1169,7 @@ are the **reader's** obligations, and a client MUST perform all of them.
 ## 9. Reading: `GET /v1/w/{workspace_id}/ops`
 
 **Credential:** a device token, unrevoked. No permission grant needed —
-see [Authority](03-authority.md) on the three bars.
+see [Authority](03-authority.md) on the two bars.
 
 ```
   ?since=41              exclusive; default 0
@@ -1092,6 +1195,9 @@ remembers nothing about who has read what.
    device X keeps its own cursor here, sends since=5, gets 6..9
    the server forgets the question immediately
 ```
+
+**[S]** `since` is an integer in `0 … 2⁶³−1`, and 0 — the default — asks for the whole
+log. Outside that range it is `422 malformed_request`.
 
 **[S]** A `limit` outside range, or an `include_reprised` value that is not
 exactly `true` or `false`, is `422 malformed_request` — **never clamped**.
@@ -1283,19 +1389,34 @@ would be a code every client had to parse differently per server.
 > accept more bytes right now*, both are handled by surfacing and not retrying, and
 > collapsing them keeps a billing relationship out of a protocol refusal.
 
-**[S]** Three things it may never gate, whatever the deployment's arrangement:
+**[S]** Four things it may never gate, whatever the deployment's arrangement:
 
 | Never refused for consumption | Because |
 |---|---|
 | `GET …/ops` — reading your own log | otherwise non-payment destroys availability, and the data was never really yours |
 | every vault route → [Keys](04-keys.md) | it holds the identity's own recovery; gating it locks somebody out of their Root, unrecoverably |
 | authentication — challenge, token, refresh | a member who cannot log in cannot read either, which is the first rule wearing a hat |
+| `PUT …/keywraps` → [Keys](04-keys.md) | it completes the rotation the `0x80` exemption below already protects; a rotation whose wrap set cannot land never finishes |
 
-> This is the whole of the exit path, and it is the reason the list exists rather
-> than being left to each operator's judgement. "The server is trusted with nothing"
-> is false the moment it can be trusted with your continued payment. A deployment may
-> stop accepting your writes; it may not hold your history hostage, and it may not
-> stand between you and the key that would let you leave.
+> The first three are the whole of the exit path, and they are the reason the list
+> exists rather than being left to each operator's judgement. "The server is trusted
+> with nothing" is false the moment it can be trusted with your continued payment. A
+> deployment may stop accepting your writes; it may not hold your history hostage, and
+> it may not stand between you and the key that would let you leave.
+
+> The fourth is the `0x80` exemption below, carried to the point where it takes
+> effect. Revoking a compromised device is a security remedy, and the remedy is not
+> finished when the revoke lands: what makes it bite is the rotation after it
+> ([Authority](03-authority.md#what-revocation-does-not-reach)), and a rotation is a
+> `rotate` op **and** the wrap set it committed to. Gate the upload and the new epoch
+> exists with nobody able to be given its key — the revoked device is locked out, and
+> so is everyone else. Exempting the write but not its completion would be an
+> exemption that does nothing.
+>
+> It is not a byte-smuggling hole. A wrap set is bounded by the member count — 104
+> bytes per member, plus one 72-byte escrow wrap — the route is whole-set-per-epoch so
+> it cannot be written to repeatedly, it is gated by the authority role (§8 of
+> [Keys](04-keys.md)), and none of it can carry application data.
 
 **[S]** And two op classes are never refused for consumption, even when every other
 write is:
