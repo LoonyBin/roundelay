@@ -313,3 +313,6 @@ changed the system into something else:
 - retention policy, scheduled reclamation, or any deletion it decided on its own
 - holding any key that opens any envelope, wrap or vault record
 - notifications, scheduled work, or any background process at all
+- an operator surface — every route here is member-credentialed, so provisioning,
+  billing and support tooling read the deployment's own storage rather than an API
+  this specification defines

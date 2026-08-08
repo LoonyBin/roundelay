@@ -1257,12 +1257,21 @@ state](reference/retained-state.md).
 ### Bounding what a Workspace consumes
 
 A deployment has finite disk and the log only grows. The core says almost nothing
-about how consumption is bounded, and exactly three things about what bounding it may
-never do.
+about how consumption is bounded, and a short list of things bounding it may never do.
 
 **[S]** A deployment MAY refuse a write because the Workspace has consumed its
 allowance, under `402 workspace_quota_exhausted`. It carries **no**
 `retry_after_seconds`, because waiting is not the remedy.
+
+**[S]** **What "consumed" measures is not specified**, and the core defines no unit,
+window or accounting rule. Bytes currently held, bytes written per month, bytes
+excluding everything already reprised — all conformant, and a client cannot tell which
+one refused it.
+
+> Deliberately unspecified rather than merely undecided. The measure is the one part
+> of this that never has to be agreed between two implementations: it changes what an
+> operator charges for, not what any two peers compute. A profile row would be
+> declaring a commercial arrangement in a document about interoperability.
 
 **[S]** The refusal says nothing else. No amount, no allowance, no plan, no price, no
 URL — a deployment's commercial surface is not protocol, and a code that carried one
@@ -1350,6 +1359,28 @@ a ceiling.
 **[S]** Quota state is **server-side and authoritative for nothing.** It is not in
 the log, no op records it, no device derives anything from it, and a replay
 reconstructs the Workspace without it — exactly like a rate-limit counter.
+
+### Guidance — the measure decides the remedy
+
+> **Non-normative.** The core counts nothing and requires no deployment to count
+> anything in particular.
+
+Whether folding is *enough* follows entirely from what a deployment counts, and the
+two common answers lead to different places:
+
+```
+   the measure counts reprised bytes      only hard_prune reduces it
+   the measure excludes reprised bytes    a soft prune is the whole remedy
+```
+
+Excluding reprised bytes from the allowance gives a Workspace a **reversible** way
+back under its ceiling. Fold, and the ceiling releases; the bytes are still on disk,
+still fetchable under `include_reprised=true`, still there if somebody needs the
+history. `hard_prune` then bounds the *operator's* storage rather than the customer's
+bill — a different question, asked by a different party, answered on its own timetable.
+
+Worth choosing deliberately rather than inheriting, because it decides whether the
+only route out of a full Workspace is the one irreversible operation in the protocol.
 
 ### Guidance — a shared Workspace is a shared fate
 

@@ -48,6 +48,41 @@ decides.
 > This is also why there is no escrow magic and no key-derivation floor here. Both
 > existed to constrain a blob the core specified the inside of. It no longer does.
 
+## Two rows that constrain more than they look
+
+Neither is a new rule. Both are consequences a profile author is better off meeting
+here than discovering in production.
+
+### Row 2 — a deployment that provisions per Workspace cannot use `derived`
+
+Under `derived`, a Root's Workspace ids are computable offline: anyone holding a
+keypair founds theirs without asking anybody. Nothing external observes it, so a
+deployment that provisions, quotas or bills per Workspace acquires Workspaces it never
+issued and cannot attribute to an account.
+
+`explicit` is the only policy with an issuing step — *any id the profile's own
+creation authority assigns* ([Authority](../03-authority.md)) — and that authority is
+where provisioning attaches. `creatable(root_pk, workspace_id)` is consulted at every
+genesis and sees both halves, so the grouping is recorded once, before the Workspace
+exists.
+
+**[P]** Admission does **not** substitute for this. It is consulted once per
+*identity*, at its founding device's registration, so an organisation founding forty
+Workspaces is admitted once and thirty-nine are never seen by the gate.
+
+### Row 11 — an unreversible `holder_ref` costs headcount
+
+The row buys one thing: a `holder_ref` that groups a person's devices inside one
+Workspace and nowhere else. That is also exactly what it costs. Nothing can then tell
+that a holder in one Workspace is the same person as a holder in another, so anything
+counted **per person across an account's Workspaces** — seats, per-user allowances,
+"how many employees are actually using this" — stops being computable from the log.
+
+> Worth weighing rather than discovering, because it is one fact seen from two sides.
+> The property that stops an observer correlating a person across Workspaces is the
+> property that stops the operator counting them, and no configuration separates the
+> two.
+
 ## Changing a profile after deployment
 
 **[P]** Changing rows **1, 4, 5 or 7** once a deployment has peers is a **protocol
