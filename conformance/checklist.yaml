@@ -201,7 +201,7 @@ items:
 - id: CONF-WIRE-008
   requirement: >
     Signature preimages are length-prefixed: framed(domain, rest) = u8 len(domain) ||
-    domain || rest, asserted against frozen vectors for all ten domains.
+    domain || rest, asserted against frozen vectors for all thirteen domains.
   spec: "docs/04-keys.md"
   subject: server
   observable: white-box
@@ -343,6 +343,16 @@ items:
   codes: [encrypted_server_read_op]
   test: tests/conformance/test_wire.py::test_sealed_server_read_classes
 
+- id: CONF-WIRE-021
+  requirement: >
+    A request body exceeding the deployment's documented bound answers 413
+    request_too_large, on any route.
+  spec: "docs/README.md"
+  subject: server
+  observable: black-box
+  codes: [request_too_large]
+  test: tests/conformance/test_wire.py::test_body_size_bound
+
 # ── Credentials ──────────────────────────────────────────────────────────────
 
 - id: CONF-CRED-001
@@ -391,10 +401,11 @@ items:
 
 - id: CONF-CRED-006
   requirement: >
-    POST /v1/members is gated by the Root-signed certificate in its body and consults
-    no stored Root: a certificate whose root_pk does not derive the Workspace it names
-    answers 403 workspace_not_reachable, and one Root did not sign answers 422
-    bad_root_signature — both before any Workspace exists.
+    On the founding branch, POST /v1/members is gated by the Root-signed certificate in
+    its body and consults no stored Root: a workspace_genesis certificate whose root_pk
+    may not create the Workspace id it names answers 403 workspace_not_reachable, and
+    one Root did not sign answers 422 bad_root_signature — both before any Workspace
+    exists.
   spec: "docs/02-identity.md"
   subject: server
   observable: black-box
@@ -561,9 +572,9 @@ items:
 
 - id: CONF-AUTHZ-007
   requirement: >
-    At current_epoch=3: epoch 3 accepted, epoch 2 accepted, epoch 1 refused 409
-    key_epoch_stale, epoch 4 refused 409 key_epoch_unknown. In an unkeyed Workspace no
-    epoch is refused.
+    Sealed ops at current_epoch=3: epoch 3 accepted, epoch 2 accepted, epoch 1 refused
+    409 key_epoch_stale, epoch 4 refused 409 key_epoch_unknown. In an unkeyed Workspace
+    no epoch is refused.
   spec: "docs/04-keys.md"
   subject: server
   observable: black-box
@@ -663,12 +674,49 @@ items:
   test: tests/conformance/test_members.py::test_scoping_exclusions
 
 - id: CONF-MEM-006
-  requirement: A pre-genesis GET /v1/w/{w}/members returns an empty list, not an error.
+  requirement: >
+    A pre-genesis GET /v1/w/{w}/members returns an empty list with has_more false, not
+    an error.
   spec: "docs/02-identity.md"
   subject: server
   observable: black-box
   codes: []
   test: tests/conformance/test_members.py::test_pregenesis_empty_list
+
+- id: CONF-MEM-007
+  requirement: >
+    GET /v1/w/{w}/members pages the raw-member_id ordering: after is exclusive and
+    compared on the raw 16 bytes rather than the UUID text, limit defaults to
+    limits.default_page_size, has_more is exact, and walking the pages by after against
+    a Workspace with no concurrent registrations returns every member exactly once in
+    ascending order.
+  spec: "docs/02-identity.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_members.py::test_member_paging
+
+- id: CONF-MEM-008
+  requirement: >
+    after is a position and not a lookup: a canonical UUID naming no member of the
+    Workspace is accepted and returns exactly the members whose raw id is strictly
+    greater.
+  spec: "docs/02-identity.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_members.py::test_cursor_need_not_resolve
+
+- id: CONF-MEM-009
+  requirement: >
+    limit outside 1..max_page_size and an after that is not a canonical UUID are
+    refused 422 malformed_request, never clamped or coerced; any other query parameter
+    is refused 422 unknown_request_field.
+  spec: "docs/02-identity.md"
+  subject: server
+  observable: black-box
+  codes: [malformed_request, unknown_request_field]
+  test: tests/conformance/test_members.py::test_member_query_validation
 
 # ── Op log ───────────────────────────────────────────────────────────────────
 
@@ -824,9 +872,10 @@ items:
 - id: CONF-LOG-017
   requirement: >
     The server does not verify envelope signatures, prev_author_hash, observed_head,
-    the nonce under suite 0x00, or author_key_id: an op with a corrupt signature, a
-    wrong prev_author_hash, a non-zero observed_head and a stale author_key_id is
-    accepted and returned byte-identically.
+    the nonce or key_epoch under suite 0x00, or author_key_id: an op with a corrupt
+    signature, a wrong prev_author_hash, a non-zero observed_head, a non-zero key_epoch
+    under suite 0x00 and a stale author_key_id is accepted and returned
+    byte-identically.
   spec: "docs/01-the-log.md"
   subject: server
   observable: black-box
@@ -878,12 +927,13 @@ items:
 
 - id: CONF-CTL-005
   requirement: >
-    Genesis certificate refusals fire in order and are distinct codes, with
-    cert_root_pk_mismatch never collapsed into bad_root_signature.
+    Genesis certificate refusals fire in order and are distinct codes; a genesis whose
+    root_pk may not found the id it names answers 403 workspace_not_reachable and never
+    422 cert_root_pk_mismatch, which a genesis does not raise.
   spec: "docs/03-authority.md"
   subject: server
   observable: black-box
-  codes: [bad_root_signature, cert_workspace_mismatch, cert_root_pk_mismatch, cert_member_mismatch, cert_key_mismatch]
+  codes: [workspace_not_reachable, bad_root_signature, cert_workspace_mismatch, cert_member_mismatch, cert_key_mismatch]
   test: tests/conformance/test_control.py::test_genesis_cert_ordering
 
 - id: CONF-CTL-006
@@ -991,6 +1041,19 @@ items:
   observable: black-box
   codes: [prune_target_already_reprised]
   test: tests/conformance/test_races.py::test_concurrent_prune
+
+- id: CONF-PRUNE-006
+  requirement: >
+    The server hashes the whole envelope: a prune and a hard_prune whose target
+    envelope_hash is SHA-256 over header || body || signature of the stored op,
+    unframed and lowercase hex, are both accepted — while the same target attested
+    with SHA-256 over the header alone, over the body alone, or over the unpacked
+    payload is refused prune_target_attestation_mismatch.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [prune_target_attestation_mismatch]
+  test: tests/conformance/test_prune.py::test_attestation_construction
 
 # ── Append effects ───────────────────────────────────────────────────────────
 
@@ -1347,6 +1410,63 @@ items:
   codes: [keywrap_digest_mismatch, keywrap_already_written]
   test: tests/conformance/test_races.py::test_concurrent_wrap_uploads
 
+- id: CONF-KEY-011
+  requirement: >
+    A client admitting a member to a keyed Workspace rotates rather than registering
+    alone. A device registered after epoch N's set was published receives its first
+    wrap in epoch N+1's set, holds none for any epoch ≤ N, and its GET keywraps/me
+    returns nothing until that rotation lands.
+  spec: "docs/04-keys.md"
+  subject: client
+  observable: black-box
+  codes: []
+  test: tests/conformance/client/test_keyplane.py::test_join_requires_rotation
+
+- id: CONF-KEY-012
+  requirement: >
+    GET keywraps/me pages the epoch ordering: after_epoch is exclusive, has_more is
+    exact, limit defaults to limits.default_page_size, and an absent after_epoch starts
+    at the first epoch held while after_epoch=0 starts above epoch 0.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_keyplane.py::test_own_wraps_paging
+
+- id: CONF-KEY-013
+  requirement: >
+    On GET keywraps/me, a limit outside 1..max_page_size and an after_epoch outside
+    0..2^32-1 are refused 422 malformed_request, never clamped or coerced; any other
+    query parameter is refused 422 unknown_request_field.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: black-box
+  codes: [malformed_request, unknown_request_field]
+  test: tests/conformance/test_keyplane.py::test_own_wraps_query_validation
+
+- id: CONF-KEY-014
+  requirement: >
+    GET epoch-keys pages the epoch ordering with after_epoch exclusive and has_more
+    exact, and an epoch whose escrow wrap is not uploaded is absent from every page:
+    with epoch 8 omitted, a page ending at 7 answers has_more true and the next page
+    begins at 9.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_keyplane.py::test_epoch_keys_paging
+
+- id: CONF-KEY-015
+  requirement: >
+    On GET epoch-keys, a limit outside 1..max_page_size and an after_epoch outside
+    0..2^32-1 are refused 422 malformed_request, never clamped or coerced; any other
+    query parameter is refused 422 unknown_request_field.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: black-box
+  codes: [malformed_request, unknown_request_field]
+  test: tests/conformance/test_keyplane.py::test_epoch_keys_query_validation
+
 # ── Discipline ───────────────────────────────────────────────────────────────
 
 - id: CONF-DISC-001
@@ -1377,8 +1497,8 @@ items:
 
 - id: CONF-DISC-004
   requirement: >
-    No code outside Appendix A is emitted by any route under any input in the
-    conformance corpus.
+    No code outside docs/reference/refusal-codes.md is emitted by any route under any
+    input in the conformance corpus.
   spec: "docs/05-compatibility.md"
   subject: server
   observable: black-box
@@ -1450,14 +1570,28 @@ items:
 
 - id: CONF-HARD-005
   requirement: >
-    A hard_prune target whose bytes are already gone applies nothing and is not an
-    error; envelope_hash disagreeing with the op held at that seq is refused
-    prune_target_attestation_mismatch.
+    A hard_prune target is attestation-checked on both paths: with the bytes still
+    held, a wrong envelope_hash is refused prune_target_attestation_mismatch; with the
+    bytes already gone, the tombstone's retained hash is compared instead, so a wrong
+    envelope_hash is refused prune_target_attestation_mismatch there too and a right
+    one applies nothing and is not an error.
   spec: "docs/01-the-log.md"
   subject: server
   observable: black-box
   codes: [prune_target_attestation_mismatch]
   test: tests/conformance/test_prune.py::test_hard_prune_idempotent_and_guarded
+
+- id: CONF-HARD-008
+  requirement: >
+    A hard_prune naming a seq no op was ever stored at is refused
+    prune_target_not_found, and a hard_prune naming a seq whose bytes a prior
+    hard_prune destroyed is not: the tombstone is found and judged, never reported
+    missing.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [prune_target_not_found]
+  test: tests/conformance/test_prune.py::test_hard_prune_target_must_exist
 
 - id: CONF-HARD-006
   requirement: >
@@ -1495,9 +1629,9 @@ items:
 
 - id: CONF-QUOTA-002
   requirement: >
-    Consumption never gates the exit path: with writes refused
-    workspace_quota_exhausted, GET /v1/w/{w}/ops, every vault route, and the
-    challenge, token and refresh routes all still succeed.
+    Consumption never gates the four never-gated routes: with writes refused
+    workspace_quota_exhausted, GET /v1/w/{w}/ops, every vault route, the challenge,
+    token and refresh routes, and PUT /v1/w/{w}/keywraps all still succeed.
   spec: "docs/01-the-log.md"
   subject: server
   observable: black-box
@@ -1601,6 +1735,17 @@ items:
   observable: black-box
   codes: []
   test: tests/conformance/client/test_verification.py::test_chain_checked
+
+- id: CONF-CLI-018
+  requirement: >
+    A client refuses an all-zero prev_author_hash on an op whose author_seq is greater
+    than 1, and a non-zero one on an op whose author_seq is 1 — both directions, and
+    the first even when it holds nothing earlier from that author.
+  spec: "docs/01-the-log.md"
+  subject: client
+  observable: black-box
+  codes: []
+  test: tests/conformance/client/test_verification.py::test_author_zero_link_rule
 
 - id: CONF-CLI-003
   requirement: A client refuses an op with a non-zero observed_head in v1.
@@ -1711,8 +1856,8 @@ items:
 
 - id: CONF-CLI-012
   requirement: >
-    A client terminalises every code Appendix A marks deterministic, and has no
-    retry-by-default fallback for unrecognised codes.
+    A client terminalises every code docs/reference/refusal-codes.md marks
+    deterministic, and has no retry-by-default fallback for unrecognised codes.
   spec: "docs/05-compatibility.md"
   subject: client
   observable: black-box
@@ -1740,6 +1885,26 @@ items:
   observable: black-box
   codes: []
   test: tests/conformance/client/test_vault.py::test_master_wrap_key_survives_handover
+
+- id: CONF-CLI-019
+  requirement: >
+    A client does not author a rotate unless it holds the Workspace's founding master
+    wrap key, and seals the new epoch's escrow wrap under that key.
+  spec: "docs/04-keys.md"
+  subject: client
+  observable: white-box
+  codes: []
+  test: tests/conformance/client/test_keyplane.py::test_rotate_requires_master_wrap_key
+
+- id: CONF-CLI-020
+  requirement: >
+    A client seals every new op at the newest epoch it holds a key for, and writes at a
+    lower epoch only to drain ops it had already signed when the rotation landed.
+  spec: "docs/04-keys.md"
+  subject: client
+  observable: white-box
+  codes: []
+  test: tests/conformance/client/test_keyplane.py::test_seals_at_newest_epoch
 
 # ── Admission ────────────────────────────────────────────────────────────────
 
@@ -1893,12 +2058,25 @@ items:
 - id: CONF-DELG-006
   requirement: >
     A delegate naming a device's registered signing key in this Workspace, or the
-    Workspace's current Root, is refused.
+    Workspace's current Root, answers 422 delegate_pk_in_use — never
+    bad_root_signature, whose signature verifies, and never malformed_root_pk, whose
+    key is 32 bytes.
   spec: "docs/03-authority.md"
   subject: server
   observable: black-box
-  codes: [bad_root_signature, malformed_root_pk]
+  codes: [delegate_pk_in_use]
   test: tests/conformance/test_delegation.py::test_delegate_key_disjoint
+
+- id: CONF-DELG-007
+  requirement: >
+    The disjointness check is positional: a delegation whose key was nobody's
+    registered signing key where it landed stays valid when a device registers that
+    key afterwards, and the certificates it signed in between stay accepted.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_delegation.py::test_delegate_key_disjointness_is_positional
 
 # ── Device key split ─────────────────────────────────────────────────────────
 
