@@ -87,32 +87,36 @@ carry Root-signed documents, and the second can authorise what the first cannot.
 [Keys](04-keys.md) states it most compactly in the vault: the locator gets the
 request *to* the slot; the Root signature gets it *into* the slot.
 
-### Root is also the identity
+### The founding Root, and the current one
 
-**[W]** A Workspace's id is derived from the public key of the Root that **founded**
-it (§3). The trust anchor and the thing it anchors are bound by arithmetic, not by a
-record somebody keeps.
+**[W]** A Workspace id is bound at genesis to the Root that **founded** it, and that
+binding never moves. How it is made is the creation policy's business (§3.1):
+`derived` computes the id from the founding Root's public key, `explicit` binds it by
+the profile's own assignment. Under either, the founder of an id is settled once and
+nothing later revisits it.
 
 ```
-       founding root_pk ──────►  the Workspace id, for ever
+       founding root_pk ──────►  bound to the Workspace id, for ever
                           │
    current root_pk ───────┴───►  the key every certificate is checked against
         (materialised from the log — the same one, until a handover)
 ```
 
 **[W]** The two are the same key until a `root_handover` moves the second one (§10).
-The first never moves: a Workspace's id is fixed at genesis.
+The first never moves: a Workspace's founding Root is fixed at genesis.
 
 > Which is why there is normally no pinning step in this layer and no window during
-> which a Workspace's Root is provisional. A key either derives the Workspace it
-> claims or it does not, and every server computes that answer identically from
-> nothing it had to be told.
+> which a Workspace's Root is provisional. The creation question is answered before
+> the Workspace exists — under `derived` by arithmetic every server computes
+> identically from nothing it had to be told, under `explicit` by the profile's own
+> assignment — and no later op reopens it.
 >
 > A handover is the one exception, and it is deliberate. Without it a Workspace's
 > Root could never be replaced, so a compromised Root would be permanent — no
 > revocation, no rotation, no remedy anywhere in the system. The price is that a
 > Workspace which has used the escape hatch answers reachability from materialised
-> state rather than from arithmetic alone.
+> state rather than from the creation predicate — under `derived`, the one place the
+> arithmetic stops being enough.
 
 ---
 
@@ -330,17 +334,65 @@ registration, but the *device being registered* is what posts it.
 **[W]** The certificate is **signed bytes, never re-serialised JSON**. Precisely:
 
 ```
-   1. parse ONLY enough to pick the verification key
-        (for grant/revoke: who claims to be the authority)
-   2. verify the signature over the LITERAL decoded bytes
-   3. only then parse the rest
-   4. record nothing before step 2 succeeds
+   1. SHAPE, before anything else: does the payload parse, is its key set
+        the closed set for its type, is the certificate the document that
+        type names
+   2. pick the verification key — from the payload, or from the type;
+        never from an unverified certificate's claim about its authority
+   3. verify the signature over the LITERAL decoded bytes, framed under
+        the document's own domain — <ns>/grant/v1 and the rest → Keys §2
+   4. only then read the certificate's contents, decide authority, record
 ```
 
-> "Verify, then parse" is the usual slogan and it is not quite true here — you cannot
-> know whose key to check against without reading one field. What must never happen
-> is *acting on* an unverified certificate. The parse in step 1 picks a key and
-> decides nothing.
+**[W]** The preimage is `framed("<ns>/<document>/v1", the certificate bytes)` ([Keys
+§2](04-keys.md#2-domain-separation-what-makes-every-signature-unambiguous)). The domain
+is what stops one document's signature verifying as another's.
+
+> "Verify, then parse" is the usual slogan and it is not quite true here — shape has
+> to be settled first, or there is nothing to verify. The invariant is narrower, and
+> it is the one that matters: **never act on an unverified certificate.** Steps 1 and
+> 2 refuse malformed documents and choose a key; they decide no authority and record
+> nothing.
+>
+> The line is worth naming. Shape is *which keys are present*; what a key **says** is a
+> value. And the rule on values is not that none is read early — it is that **no value
+> is judged for what it says before the signature.** A role token or a member kind
+> against the profile's vocabulary, a grantee or an id against the log: those all wait
+> for step 4 (§10). What may be read above it is only whether the document is
+> **addressed here at all**.
+>
+> Two families are read above the signature, and both refuse documents a perfect
+> signature would not have saved. The first is the genesis **creation** question — may
+> this Root bring this id into being (§3.1), which is why `workspace_not_reachable`
+> precedes `bad_root_signature` at both doors ([Identity](02-identity.md)). The second
+> is the cross-checks that bind a document to **the address it arrived at** —
+> `cert_workspace_mismatch`, `cert_granter_mismatch` on a grant or a revoke,
+> `cert_root_pk_mismatch` on a handover — read early on the five types only an op can
+> carry. The two documents the other door also accepts run signature-first, in the same
+> order under the same codes at both doors (§10, [Identity](02-identity.md)). Beside
+> them, a `delegate_pk` or `from_root_pk` that is not 32 bytes is shape, judged in its
+> own type's sequence.
+>
+> The handover case is the one that *must* sit there. A device skewed across a handover
+> builds its document against the retired Root; judged after the signature it would be
+> told `bad_root_signature` — the code this specification reserves for *forged, and no
+> remedy* — instead of *rebuild against the Root the log reports*, which is the entire
+> remedy for skew (§10).
+>
+> Step 2 reads no certificate on a grant or a revoke: the authority claim is the
+> **payload's** `granter` or `revoker`. The one certificate it reads is a genesis's own
+> `root_pk` — bound to the Workspace id by the creation predicate, arithmetic under
+> `derived` and the profile's own assignment under `explicit` (§3.1), rather than taken
+> on trust.
+>
+> Which is why the five op-only types read the address first — their keys come from the
+> log, and a document aimed at the wrong Workspace or naming the wrong authority is
+> better answered as misaddressed than as forged — while the door-shared two verify
+> first: a genesis at no cost to any remedy, since it verifies under a key inside the
+> very document being verified, and a registration because one certificate must answer
+> in one order whichever door it arrives at, which prices a wrong-Workspace post as
+> `bad_root_signature`. That is the one place door parity outbids the addressing
+> family, and it is paid knowingly.
 
 **[S]** The same four checks apply to a registration certificate presented at
 `POST /v1/members` ([Identity](02-identity.md)) rather than inside an op, under the
@@ -399,26 +451,121 @@ refused by the ordinary rule rather than by an id check.
 **[W]** The `*_hlc` fields are logical clocks: `[wall_ms, counter,
 member_id_as_32_hex_chars]`. The server stores them and never orders by them.
 
-**[W]** Both key ids inside a certificate are **derivations** and MUST be
-cross-checked against SHA-256 of the key beside them. A claimed id that disagrees is
+**[W]** Every key id inside a certificate is a **derivation** and MUST be
+cross-checked against SHA-256 of the key beside it. A claimed id that disagrees is
 a forgery attempt, not a variant spelling.
+
+### How an op carries one
+
+**[W]** A certificate travels as **base64 bytes and a detached signature**, under the
+two names [Identity](02-identity.md) already uses at `POST /v1/members`: `cert_b64`
+and `cert_sig_b64`. The bytes are the signed bytes, never a re-serialisation.
+
+```json
+// genesis · member_register · delegate · revoke_delegation · root_handover
+{"type": "member_register",
+ "prev_control_hash": "<hex64>",
+ "cert_b64":     "<b64>",
+ "cert_sig_b64": "<b64 64B>"}
+
+// grant — and revoke, with "revoker" in place of "granter"
+{"type": "grant",
+ "prev_control_hash": "<hex64>",
+ "granter": "root" | "<uuid>",
+ "cert_b64":     "<b64>",
+ "cert_sig_b64": "<b64 64B>"}
+
+// rotate — the one type with no certificate
+{"type": "rotate",
+ "prev_control_hash": "<hex64>",
+ "workspace_id": "…",
+ "from_epoch": 2,
+ "to_epoch":   3,
+ "keywrap_digest_b64": "<b64 32B>"}
+```
+
+**[W]** The whole key set, per type:
+
+| Type | Keys, beyond `type` and `prev_control_hash` |
+|---|---|
+| `workspace_genesis` | `cert_b64`, `cert_sig_b64` |
+| `member_register` | `cert_b64`, `cert_sig_b64` |
+| `grant` | `granter`, `cert_b64`, `cert_sig_b64` |
+| `revoke` | `revoker`, `cert_b64`, `cert_sig_b64` |
+| `delegate` | `cert_b64`, `cert_sig_b64` |
+| `revoke_delegation` | `cert_b64`, `cert_sig_b64` |
+| `root_handover` | `cert_b64`, `cert_sig_b64` |
+| `rotate` | `workspace_id`, `from_epoch`, `to_epoch`, `keywrap_digest_b64` |
+
+**[W]** **Every set is closed.** A missing key, or one outside the set — a key
+belonging to another type, a key this document does not define — is
+`malformed_control_payload`, on the rule that closes every payload in this protocol
+([Compatibility](05-compatibility.md)).
+
+**[W]** The certificate a payload carries MUST be the document its `type` names.
+Anything else is `malformed_control_payload` — a shape verdict, settled at step 1.
+
+> Nothing cryptographic rests on this rule. The signing domains ([Keys](04-keys.md))
+> already make a mis-carried certificate unverifiable: a revoke document inside a grant
+> payload dies at the signature whichever way this fell. And the mechanism is only that
+> certificates carry no `type` field of their own, so the closed key set is how the
+> server tells which of the seven it is holding.
+>
+> What the rule buys is **code honesty.** Without it, a client that built its payload
+> around the wrong document falls through to `bad_grant_signature` or
+> `bad_root_signature` — codes this specification reserves for *these bytes are forged*,
+> which has no remedy (§10). `malformed_control_payload` says *rebuild this payload
+> around the right document*, which does.
+
+**[W]** Only `grant` and `revoke` name their authority in the payload, because only
+they have a choice of one — `"root"`, or the uuid of a device holding the authority
+role. That is the value `cert_granter_mismatch` compares against the certificate's own
+(§10). `"root"` resolves to **root authority**: the Workspace's current Root, then each
+delegation live at that op's position (§6). A uuid resolves to that device's registered
+`control_pk` (below). Everywhere else the verification key follows from the type, and
+no field is needed to find it:
+
+```
+   workspace_genesis   the root_pk INSIDE its own certificate — op 1 has to
+                       introduce the key that checks it
+   member_register     root authority: the Workspace's current Root, then each
+                       delegation live at this op's position
+   delegate            the current Root itself — never a delegate — §6
+   revoke_delegation   the current Root itself — never a delegate — §6
+   root_handover       the current Root itself, which is what from_root_pk
+                       must already name
+```
+
+**[W]** `rotate` carries `workspace_id` **in the payload**, and it is the only type
+that does.
+
+> Every other type's Workspace binding rides inside its certificate, and that is what
+> `cert_workspace_mismatch` compares against the envelope's header. A rotate has no
+> certificate to carry one, so the payload makes the claim itself — same check, same
+> code, one document fewer.
 
 ### Two signing keys, by how often they are used
 
-**[W]** A device registers **two** Ed25519 signing keys, and the class byte decides
-which one signs an envelope:
+**[W]** A device registers **two** Ed25519 signing keys, and **bit 7 of the class
+byte** decides which one signs an envelope:
 
 ```
-   control_pk    server-read classes — 0x80, 0x81, 0xBF
+   control_pk    every class with bit 7 SET — 0x80, 0x81, 0xBF, and any
+                 extension class the deployment has enabled in 0xC0–0xFF
                  occasional: a registration, a grant, a rotation
                  and the auth challenge → Identity
 
-   content_pk    opaque classes — 0x00–0x7F
+   content_pk    every class with bit 7 CLEAR — the opaque range, 0x00–0x7F
                  constant: every note, every edit, every fold
 ```
 
+**[W]** The rule is **on the bit, not on the list.** An extension class is
+server-read by construction ([The Log](01-the-log.md)), so it is signed by the
+control key without this document having to name it — and no class a deployment
+enables later arrives with this assignment undefined.
+
 **[S]** The header's `author_key_id` says which key signed, and the server checks it
-matches the class: a server-read envelope carrying the content key id, or an opaque
+against that bit: a bit-7-set envelope carrying the content key id, or a bit-7-clear
 one carrying the control key id, is refused `422 author_key_class_mismatch`.
 
 **[S]** This is a **header check, not a signature check**. The server still never
@@ -435,6 +582,21 @@ verifies an envelope signature; it compares two registered ids against one byte.
 > would buy very little. Binding the challenge to the control key keeps the token as
 > cold as the coldest thing it speaks for — used once per session rather than once
 > per keystroke.
+
+**[W]** A **grant or revoke certificate signed by a device authority is signed with
+that device's control key.** The payload's `granter` — or `revoker` — names the
+device, and the server resolves it to that device's registered `control_pk` and
+verifies the certificate bytes under that key. A signature under anything else,
+including that device's own content key, is `bad_grant_signature` or
+`bad_revoke_signature`.
+
+> The same argument as the challenge, one step further. Minting a permission change
+> is the coldest thing a device ever does, and a certificate the hot key could sign
+> would put every grant in the Workspace one compromised editor process away.
+>
+> The other authorities are not device keys at all: Root signs its own certificates,
+> and a delegate signs with the delegation key — which §10 forbids from being any
+> device's registered signing key.
 
 > The split is by *frequency*, not by sensitivity. Both keys live on the same device
 > and die with it; neither has a recovery story, because re-enrolling mints new ones.
@@ -796,12 +958,25 @@ for every class but control.
 ```
    invalid_body_length ─► payload_overruns_body ─► non_zero_padding
         ─► malformed_control_payload ─► unsupported_control_type
-        ─► unknown_role ─► owner_grant_requires_root ─► control_chain_break
+        ─► control_chain_break
 ```
 
 **[S]** `control_chain_break` is checked **before** any type-specific rule, so a
 misplaced genesis with a non-zero link answers `control_chain_break` rather than
 `genesis_not_first`.
+
+> Everything in that chain is **shape**: framing, decoding, a served type, a link that
+> fits. Two codes that look like they belong there do not, and both sit in the grant
+> sequence below, under `bad_grant_signature`.
+>
+> `owner_grant_requires_root` is an authority verdict, and nothing decides who may do
+> what from bytes whose signature has not verified. `unknown_role` judges a **value**
+> out of a certificate for what it says (§5) — and it is a `grant`-only check, which
+> the line above already says the chain runs before. `unknown_member_kind` is the same
+> kind of vocabulary check on a registration certificate, and it is not in the chain
+> either.
+>
+> Refusal order is observable, so each of them can only be in one place.
 
 **[S]** Then, **unless the payload is Root-signed**, the authority-role check for
 `0x80`: `no_live_grant` or `role_forbids_op_class`.
@@ -821,23 +996,26 @@ registers it** — a `member_register`, or the genesis that embeds one. Otherwis
 | 3 | `422 member_register_not_first` | the founder's `author_seq` is not 1 |
 | 4 | `422 bad_root_signature` | Root did not sign these certificate bytes |
 | 5 | `422 cert_workspace_mismatch` | the certificate names another Workspace |
-| 6 | `422 cert_root_pk_mismatch` | the Root inside does not derive this Workspace |
-| 7 | `422 cert_member_mismatch` | the founder named is not the envelope's author |
-| 8 | `422 cert_key_mismatch` | the founder's key is not this device's registered key |
+| 6 | `422 cert_member_mismatch` | the founder named is not the envelope's author |
+| 7 | `422 cert_key_mismatch` | the founder's key is not this device's registered key |
+| 8 | `422 unknown_member_kind` | the founder's kind is not in the profile's set |
 
 **[S]** Genesis carries **no admission check**. The device posting it already holds a
 token, which it could only have obtained from a member record, which was the admitted
 act ([Identity](02-identity.md)).
 
-**[W]** `cert_root_pk_mismatch` and `bad_root_signature` **MUST remain distinct
-codes.**
+**[S]** A genesis raises **no `cert_root_pk_mismatch`**. The op carries exactly one
+`root_pk` — the certificate's own — and check 2 has already asked the creation
+predicate of it (§3.1). The only other way this Workspace could have a different Root
+in force is that it already exists, and that is check 1.
 
-> A server that can only say `bad_root_signature` destroys information a skewed
-> device cannot recover. The first means *this certificate names a Root that is not
-> this Workspace's* — a client that built the document against the wrong key, or
-> posted it to the wrong path, both with a real remedy. The second means *these bytes
-> are forged* — not recoverable. Collapsing them is a contract violation, not a
-> simplification.
+> The check once compared two keys, because `workspace_not_reachable` was asked of the
+> Root bound to the poster's token and this one of the certificate's own. The server
+> keeps no Root beside a device any more ([Identity](02-identity.md)), so there is one
+> key here and one check that judges it — and under `explicit` there would be no
+> derivation to compare it against in any case. A Root that may not found the id it
+> names is `workspace_not_reachable`; a Workspace that is already founded is
+> `genesis_not_first`.
 
 > A second genesis is not a fork for the server to resolve: it holds no control chain
 > of its own, so it refuses and leaves the tie-break to the devices that do. Two
@@ -848,11 +1026,26 @@ codes.**
 
 ### `member_register`
 
-**[S]** In order: `member_register_not_first`, `bad_root_signature`,
-`cert_workspace_mismatch`, `cert_member_mismatch`, `cert_key_mismatch`.
+**[S]** In order: `409 workspace_not_created`, `member_register_not_first`,
+`bad_root_signature`, `cert_workspace_mismatch`, `cert_member_mismatch`,
+`cert_key_mismatch`, `unknown_member_kind`.
+
+**[S]** `workspace_not_created` comes first because nothing about the op can be
+judged against a Workspace that does not exist — there is no current Root to verify
+under. The route's joining branch already answers the same code for the same cause
+([Identity](02-identity.md)): one certificate, one verdict, whichever door.
 
 > No admission check here either, and for the same reason: this op is authored under
 > a device token, and obtaining one is what admission gated.
+
+> Both sequences put `unknown_member_kind` last for the reason `unknown_role` sits
+> under `bad_grant_signature`: it judges a value **for what it says** — a token against
+> the profile's vocabulary — and no such judgement runs before the signature. What runs
+> above it here is only the first of §5's early families — the creation question at 2.
+> These are the two documents the other door also accepts, so they run signature-first
+> and their address cross-checks sit below it with every other read (§5). The identity
+> checks precede the vocabulary one because they ask whether this document belongs here
+> at all.
 
 ### `grant`
 
@@ -863,6 +1056,7 @@ codes.**
 | `422 cert_workspace_mismatch` | names another Workspace |
 | `422 cert_granter_mismatch` | two causes — see below |
 | `422 bad_grant_signature` | the named authority did not sign these bytes |
+| `422 unknown_role` | the certificate's role token is not in the profile's set |
 | `422 owner_grant_requires_root` | an `owner` grant not granted by Root |
 | `422 unknown_grantee` | three causes — see below |
 | `422 member_kind_forbidden` | the profile's rule rejects it |
@@ -913,9 +1107,10 @@ failed revocation from an invalid grantee.
 
 ### `delegate` and `revoke_delegation`
 
-**[S]** Both are **signed by Root itself**. A signature by a live delegate is refused
-here, and only here, under the same code — a delegate that could delegate is a
-delegate that could outlive its own revocation.
+**[S]** Both are **signed by Root itself**, so a live delegate's signature is refused
+`bad_root_signature` — as it is on a genesis or a handover, the other documents §6
+withholds from delegates. A delegate that could delegate is a delegate that could
+outlive its own revocation.
 
 **[S]** `delegate`, in order:
 
@@ -924,6 +1119,7 @@ delegate that could outlive its own revocation.
 | `422 cert_workspace_mismatch` | names another Workspace |
 | `422 malformed_root_pk` | `delegate_pk` is not 32 bytes |
 | `422 bad_root_signature` | the current Root did not sign these bytes |
+| `422 delegate_pk_in_use` | two causes — see below |
 | `409 delegation_id_already_used` | a *different* op already used this id |
 
 **[S]** `revoke_delegation`, in order: `cert_workspace_mismatch`,
@@ -933,11 +1129,40 @@ delegate that could outlive its own revocation.
 failed delegation revocation from a failed grant revocation.
 
 **[S]** A delegation MUST NOT name a key that is any device's registered signing key
-in this Workspace, and MUST NOT name the Workspace's current Root.
+in this Workspace, and MUST NOT name the Workspace's current Root. Both are refused
+`422 delegate_pk_in_use`.
 
 > Both would blur two authorities into one key. A device whose signing key also held
 > root authority could mint its own grants, and rule 3's symmetry would be a
 > formality. Root naming itself is simply a no-op with a revocation attached.
+>
+> One code for both, because a client learns the same thing and does the same thing:
+> mint a fresh keypair and delegate that. Neither form is `bad_root_signature` — the
+> signature is Root's and it verifies — and neither is `malformed_root_pk`: 32 bytes
+> is exactly what this key is.
+>
+> It sits **below the signature** because it judges a **value** for what it says —
+> what this key already is to this Workspace — and §5 admits no such judgement above
+> it. Above `delegation_id_already_used` for the reason `unknown_role` sits above
+> `grant_id_already_used`: a document's own claims are settled before its id is
+> booked.
+
+**[S]** The check reads the log **at the delegate op's own position**, and the verdict
+is positional like every other in this layer (§11). A key that is nobody's registered
+signing key where the delegation lands does not become one retroactively: a device
+that registers it afterwards leaves the delegation, and everything it has signed,
+untouched.
+
+> The alternative is the retroactive rewrite §11 exists to forbid — a registration
+> arriving in June silently unmaking a delegation from March and every certificate it
+> signed in between.
+>
+> Which bounds what the rule buys, and the bound is worth stating. Disjointness is
+> enforced where the delegation lands and nowhere else; a client that wants it to hold
+> for ever mints the delegation key fresh and registers it nowhere. Nor is any key
+> barred for ever — a handover retires a Root, and the key it retires is delegable
+> after it. The remedy for this refusal is still a different document, never a retry
+> of this one.
 
 ### `root_handover`
 
@@ -950,14 +1175,23 @@ in this Workspace, and MUST NOT name the Workspace's current Root.
 | `422 cert_root_pk_mismatch` | `from_root_pk` is not this Workspace's current Root |
 | `422 bad_root_signature` | the outgoing Root did not sign these bytes |
 
-**[S]** `cert_root_pk_mismatch` carries the same meaning it carries on a genesis —
-**the Root this certificate names is not the one in force for this Workspace** — and
-is raised here for the second of the two ways that can be true.
+**[S]** `cert_root_pk_mismatch` means **the Root this certificate names is not the one
+in force for this Workspace**, and this is one of the two occasions the core raises it
+on. The other is at `POST /v1/members`, where a `member_register` certificate presents
+a `root_pk` that is not that Workspace's current Root ([Identity](02-identity.md)).
 
-> Not a merged code. Both forms mean *rebuild this document against the Root the log
-> actually says is current*, and the remedy is identical; only the way you arrived at
-> the wrong key differs. That is the test the [code
-> list](reference/refusal-codes.md) applies.
+> Not a merged code. Both mean *rebuild this document against the Root the log
+> actually says is current*, and the remedy is identical; only the door you arrived at
+> differs. That is the test the [code list](reference/refusal-codes.md) applies.
+
+**[W]** `cert_root_pk_mismatch` and `bad_root_signature` **MUST remain distinct
+codes.**
+
+> A server that can only say `bad_root_signature` destroys information a skewed
+> device cannot recover. The first means *this certificate names a Root that is not
+> this Workspace's* — a client that built the document against the wrong key, which
+> has a real remedy. The second means *these bytes are forged* — not recoverable.
+> Collapsing them is a contract violation, not a simplification.
 
 **[S]** A handover is **Root-signed, so it needs no grant** (§2), but its author must
 still be a registered device: `member_register_not_first` applies unchanged.
@@ -1092,10 +1326,11 @@ the access gate (§3.2) while failing bar 1.
 > device, and only the second one leaves evidence in the log.
 
 **[S] A root handover** moves the Workspace's **current Root**, and nothing else. The
-founding Root — the one the Workspace id derives from — is unchanged and unchangeable.
+founding Root — the one the Workspace id is bound to (§2) — is unchanged and
+unchangeable.
 
 ```
-   before          founding = current = R₀       reachability is arithmetic
+   before          founding = current = R₀       reachability is the founding binding
    handover        founding = R₀, current = R₁   reachability consults the log
    after           certificates verify under R₁; R₀'s past ones still verify
 ```
