@@ -287,6 +287,15 @@ locally. A client that meets an unfamiliar code surfaces it verbatim.
 **Races never surface as internal errors.** Every concurrency hazard has a named,
 documented verdict. A `500` is a bug, not a state.
 
+### And one thing that is not an invariant
+
+**Metadata is not protected.** The server sees when every op arrived, which device
+wrote it, which identity holds that device, who holds which permission and when it
+changed. Across an organisation those fields compose into an org chart with a clock
+attached, and holding every key yourself does not change it: the server cannot order
+ops it cannot see arrive. [Keys](04-keys.md) sets out the whole list, what it adds up
+to, and the little that can be reduced.
+
 ---
 
 ## 8. What this server does not do

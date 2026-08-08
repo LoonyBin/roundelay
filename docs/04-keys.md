@@ -787,10 +787,11 @@ recovery record MUST derive it from a secret at least as strong as the primary.
 > backup. If either one opens everything, adding the weaker one moved the whole
 > account down to it.
 
-**[S]** **The server can tell sibling slots apart from strangers', and a client
-should not assume otherwise.** Every slot stores its pinned Root public key, so
-grouping by that column returns every wrapping of one identity, with the times they
-were written.
+**The server can tell sibling slots apart from strangers'**, and a client should not
+assume otherwise. Every slot stores its pinned Root public key, so grouping by that
+column returns every wrapping of one identity, with the times they were written. That
+is a consequence of the pin, not a rule of its own — no requirement here creates it
+and none can remove it.
 
 > Stated plainly because the comfortable assumption is the opposite one. The locators
 > are unlinkable — they come from independent secrets and nothing derives one from
@@ -968,33 +969,90 @@ This is the route that makes a fresh device work with **no second device online*
 
 ## 9. What the server can and cannot learn
 
-Worth stating plainly, because it is the thing being bought.
+Worth stating plainly, because it is the thing being bought — and because the list
+grew when Workspaces became shareable, in the direction that matters most.
 
-**It can see:** how many ops exist, when they arrived, which device wrote each one,
-how ops are grouped into Workspaces, roughly how large each payload is (to the
-nearest size class), who holds which permissions, and when keys were rotated.
+**It can see:**
 
-**And one thing more, once reprising starts:** a prune op names the ops it
-reprises, so the server learns that those ops belong together — without learning
-what they are. If a client folds one record at a time, that is a partition of the
-history into per-record groups. It is a client design choice rather than a protocol
-property, and the trade-offs are set out under
+- how many ops exist, when each one arrived, and which device wrote it
+- how ops group into Workspaces
+- roughly how large each payload is, to the nearest size class
+- which devices are registered in which Workspace — and **which of them one identity
+  holds**, because `holder_root_pk` groups them ([Authority](03-authority.md))
+- who holds which permissions, and every change: grants, revokes, delegations
+- when keys were rotated
+- which vault slots share a pinned Root, and so belong to one identity (§7)
+
+**And one thing more, once reprising starts:** a prune op names the ops it reprises,
+so the server learns that those ops belong together — without learning what they are.
+If a client folds one record at a time, that is a partition of the history into
+per-record groups. It is a client design choice rather than a protocol property, and
+the trade-offs are set out under
 [a prune discloses a grouping](01-the-log.md#guidance--a-prune-discloses-a-grouping).
 
-**It cannot see:** anything any content op says, any reprise op's contents, any
-epoch key, Root, the master wrap key, the wrapping secret, or anything the client
-derived on the way to it.
+**It cannot see:** anything any content op says, any reprise op's contents, any epoch
+key, Root, the master wrap key, the wrapping secret, or anything the client derived
+on the way to it.
 
-**It cannot know:** who a locator belongs to, whether two locators belong to the same
-person, or how strong the secret behind one is. It holds no account record of any
-kind.
+**It cannot know who anybody is.** Every identity it handles is 32 bytes. Nothing in
+this protocol maps a public key to a name, an address or a person, and no certificate
+may carry one ([Authority](03-authority.md)). It also cannot tell how strong the
+secret behind a locator is.
 
 **It cannot do:** forge a signature, grant a permission, add or remove a device from a
 wrap set, or read a body — even holding the entire database.
 
-**It can still do:** withhold ops, refuse writes it should have accepted, and see
-metadata. Availability and metadata are not protected here. Confidentiality and
-authenticity are.
+### What it adds up to
+
+For one identity with three devices the metadata is thin. Across two hundred
+identities sharing Workspaces, the same fields compose into something else, and it is
+better to say so than to let somebody discover it:
+
+```
+   registrations over time            joiners
+   revocations, and when              leavers, and how abruptly
+   co-membership across Workspaces    who works with whom
+   op timestamps per device           when people work, and when they stopped
+   op volume per Workspace            which projects are alive
+   who holds owner or a delegation    where authority actually sits
+   a burst of both at once            a reorganisation, or an acquisition
+```
+
+None of that is content. All of it is an org chart with a clock attached.
+
+**One join is worth naming on its own.** A vault slot's pinned Root and a
+registration's `holder_root_pk` are the same 32 bytes, so the two tables can be
+joined: *the identity behind this vault slot is a member of those Workspaces.* That
+crosses the key plane and the log plane, which nothing else in this design does.
+
+### Holding the keys does not withhold the metadata
+
+None of the above depends on who holds a key. It is what the server sees by doing its
+job: it cannot order ops without watching them arrive, refuse a write without knowing
+who may write, or serve a page without knowing which Workspace it belongs to.
+Metadata is not a leak in this design — it is the working material.
+
+> Worth stating because the inference runs the other way so naturally. *We hold every
+> key* is a claim about confidentiality and says nothing about the list above, and a
+> deployment that reaches from one to "end to end encrypted" has described its content
+> accurately and its exposure not at all.
+
+### What can be reduced
+
+> **Non-normative.** None of this is a requirement on anyone, and a deployment that
+> ignores all of it is conformant.
+
+Not much, honestly, and the short list is short for a reason:
+
+- **size** is already blurred by the padding ladder, which is coarse on purpose
+- **timing** blurs if a client batches rather than writing through
+- **grouping** shrinks if reprises fold larger sets, or if the client never folds
+- **everything else** goes away only by not sharing a server with an observer you
+  care about
+
+Availability and metadata are **not protected here**. Confidentiality and
+authenticity are. A design claiming otherwise would be claiming something no server
+that orders bytes can deliver.
 
 ---
 

@@ -976,9 +976,10 @@ and it cannot pull old ones either. Its refresh tokens are dead and its sockets 
 closed. Only an unexpired access token outlives the revoke, and every route re-tests
 the bar, so it buys nothing.
 
-**[W]** It is **not a cryptographic cut**. The device keeps every epoch key it ever
-held and every op it already pulled, and both stay readable to it for ever. Nothing
-in an append-only log can be unsent, and no rule here pretends otherwise.
+It is **not a cryptographic cut**. The device keeps every epoch key it ever held and
+every op it already pulled, and both stay readable to it for ever. Nothing in an
+append-only log can be unsent, and no rule here pretends otherwise — which is why the
+next line is the only remedy this layer has.
 
 **[C]** A revoke SHOULD therefore be followed by a `rotate`.
 

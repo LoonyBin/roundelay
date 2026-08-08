@@ -60,7 +60,7 @@ repositories; this one defines the core and nothing else.
 
 ---
 
-## Five things worth knowing before you read further
+## Seven things worth knowing before you read further
 
 **The server verifies far less than it stores.** It never checks envelope
 signatures or author chains — those belong to the device that pulls, because only
@@ -78,8 +78,14 @@ itself by replaying it. Tampering with server state cannot elevate anyone.
 
 **The identity is a keypair, not an account.** There is no identity provider and no
 user record. A Workspace's id derives from the public key of the Root that founded
-it, and Root itself lives wrapped in a vault slot the server cannot read, addressed
-by a locator it cannot connect to anyone.
+it, and Root itself lives wrapped in a vault slot the server cannot open. Every
+identity it handles is 32 bytes; nothing here maps one to a person.
+
+**Metadata is not protected, and at scale it is an org chart.** The server sees when
+each op arrived, which device wrote it, which identity holds that device, who was
+granted what and when it was taken away. None of it is content; all of it composes.
+Holding every key yourself moves confidentiality and moves none of this — [Keys
+§9](docs/04-keys.md) says exactly what is and is not bought.
 
 **Refusal codes are protocol.** A code may not be narrowed, merged, or invented
 locally, and a client that meets an unfamiliar one surfaces it verbatim.
