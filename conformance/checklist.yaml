@@ -1,0 +1,1598 @@
+# Roundelay conformance checklist.
+#
+# Authoritative. The five layer documents defer to this file.
+#
+# Two lints hold, and a conforming release runs both:
+#   coverage      — every code in docs/reference/refusal-codes.md appears in some item's `codes`
+#   observability — every `observable: black-box` item is decidable from HTTP/WS traffic alone
+#
+# Fields:
+#   id          stable; cite it in review ("this loosens CONF-LOG-014")
+#   requirement one sentence, mechanically decidable
+#   spec        the section it derives from
+#   subject     server | client | profile
+#   observable  black-box | white-box
+#   codes       refusal codes exercised, signal close codes included; [] where none
+#   test        binding into the implementation's suite
+
+version: 1
+spec: docs/README.md
+
+items:
+
+# ── Contract versioning ──────────────────────────────────────────────────────
+
+- id: CONF-VER-001
+  requirement: Every route in §6 and §7 is served under /v1; /health and /health/db are not.
+  spec: "docs/05-compatibility.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_versioning.py::test_prefix_placement
+
+- id: CONF-VER-002
+  requirement: >
+    GET /v2/w/{w}/ops answers 404 unsupported_contract_version with requested="v2"
+    and served=["v1"].
+  spec: "docs/05-compatibility.md"
+  subject: server
+  observable: black-box
+  codes: [unsupported_contract_version]
+  test: tests/conformance/test_versioning.py::test_unserved_version
+
+- id: CONF-VER-003
+  requirement: >
+    A non-version-shaped first segment (/api/…, /V2/…, /v01/…, /v1x/…) and a served
+    version with an unknown suffix (/v1/nope) both answer 404 not_found.
+  spec: "docs/05-compatibility.md"
+  subject: server
+  observable: black-box
+  codes: [not_found]
+  test: tests/conformance/test_versioning.py::test_not_version_shaped
+
+- id: CONF-VER-004
+  requirement: >
+    An unknown body field at any depth is refused 422 unknown_request_field, with all
+    offending dot-paths listed and sorted lexicographically by UTF-8 bytes.
+  spec: "docs/05-compatibility.md"
+  subject: server
+  observable: black-box
+  codes: [unknown_request_field]
+  test: tests/conformance/test_versioning.py::test_unknown_body_field
+
+- id: CONF-VER-005
+  requirement: An unknown query parameter is refused 422 unknown_request_field.
+  spec: "docs/05-compatibility.md"
+  subject: server
+  observable: black-box
+  codes: [unknown_request_field]
+  test: tests/conformance/test_versioning.py::test_unknown_query_param
+
+- id: CONF-VER-006
+  requirement: >
+    The unknown-field check runs after credential resolution and before authorization:
+    an unauthenticated request with an unknown field answers 401, and an authenticated
+    but unauthorized one answers 422.
+  spec: "docs/05-compatibility.md"
+  subject: server
+  observable: black-box
+  codes: [unknown_request_field, invalid_credential]
+  test: tests/conformance/test_versioning.py::test_unknown_field_ordering
+
+- id: CONF-VER-007
+  requirement: A duplicate JSON object key is refused 422 malformed_request, never resolved last-wins.
+  spec: "docs/README.md"
+  subject: server
+  observable: black-box
+  codes: [malformed_request]
+  test: tests/conformance/test_versioning.py::test_duplicate_json_key
+
+- id: CONF-VER-008
+  requirement: >
+    Wrong JSON scalar types are refused: a boolean or float where §2.4 requires an
+    integer, and an out-of-range integer.
+  spec: "docs/README.md"
+  subject: server
+  observable: black-box
+  codes: [malformed_request]
+  test: tests/conformance/test_scalars.py::test_scalar_types
+
+# ── Health ───────────────────────────────────────────────────────────────────
+
+- id: CONF-HEALTH-001
+  requirement: >
+    GET /health returns status, a non-empty version, contract_versions ascending,
+    protocol_namespace, profile, and the four required limits keys.
+  spec: "docs/05-compatibility.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_health.py::test_health_shape
+
+- id: CONF-HEALTH-002
+  requirement: GET /health succeeds while the backing store is unavailable.
+  spec: "docs/05-compatibility.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_health.py::test_health_survives_store_outage
+
+- id: CONF-HEALTH-003
+  requirement: GET /health/db answers 503 store_unavailable when the store is unreachable.
+  spec: "docs/05-compatibility.md"
+  subject: server
+  observable: black-box
+  codes: [store_unavailable]
+  test: tests/conformance/test_health.py::test_health_db_outage
+
+# ── Wire format ──────────────────────────────────────────────────────────────
+
+- id: CONF-WIRE-001
+  requirement: >
+    An envelope posted and then pulled is returned byte-identically, including one
+    whose 0x01 body is uniformly random (illegal framing, payload_len overrunning,
+    non-zero padding).
+  spec: "docs/README.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_wire.py::test_envelope_roundtrip_opaque
+
+- id: CONF-WIRE-002
+  requirement: >
+    Header offsets are honoured: byte 0 = 0x03 gives unsupported_op_class; byte 1 = 0x02
+    gives unsupported_suite; bytes 2-17 not matching the path Workspace gives
+    workspace_mismatch; bytes 38-53 not matching the token's Member gives
+    author_member_mismatch.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [unsupported_suite, unsupported_op_class, workspace_mismatch, author_member_mismatch]
+  test: tests/conformance/test_wire.py::test_header_offsets_by_probe
+
+- id: CONF-WIRE-003
+  requirement: >
+    An envelope shorter than 158 bytes gives truncated_envelope; one at or above 158
+    but below the suite's floor gives envelope_too_short, and the floor is 16 bytes
+    higher under suite 0x01.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [truncated_envelope, envelope_too_short]
+  test: tests/conformance/test_wire.py::test_length_floors
+
+- id: CONF-WIRE-004
+  requirement: Suite 0x01 with op_class 0x80 gives encrypted_control_op; with op_class 0x81, encrypted_prune_op.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: black-box
+  codes: [encrypted_control_op, encrypted_prune_op]
+  test: tests/conformance/test_wire.py::test_forbidden_pairs
+
+- id: CONF-WIRE-005
+  requirement: >
+    Op class 0x03 is refused unsupported_op_class, as is every unassigned, undeclared
+    or unenabled value in all four quadrants; 0x01, 0x04, 0x80, 0x81 are served.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [unsupported_op_class]
+  test: tests/conformance/test_wire.py::test_served_op_classes
+
+- id: CONF-WIRE-006
+  requirement: A base64 value with a non-alphabet character or missing padding is refused, never repaired.
+  spec: "docs/README.md"
+  subject: server
+  observable: black-box
+  codes: [malformed_request, malformed_sign_pk]
+  test: tests/conformance/test_wire.py::test_strict_base64
+
+- id: CONF-WIRE-007
+  requirement: >
+    Uppercase hex and non-canonical UUID spellings (braces, urn: prefix, uppercase,
+    missing dashes) are refused inside control and prune payloads, never normalised.
+  spec: "docs/README.md"
+  subject: server
+  observable: black-box
+  codes: [malformed_control_payload, malformed_prune_payload]
+  test: tests/conformance/test_wire.py::test_canonical_spellings
+
+- id: CONF-WIRE-008
+  requirement: >
+    Signature preimages are length-prefixed: framed(domain, rest) = u8 len(domain) ||
+    domain || rest, asserted against frozen vectors for all ten domains.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: white-box
+  codes: []
+  test: tests/conformance/test_domains.py::test_framed_preimages
+
+- id: CONF-WIRE-009
+  requirement: >
+    keywrap_digest sorts by raw member_id bytes then raw kex_key_id bytes; a set whose
+    base64 order differs from its byte order produces the byte-order digest.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: black-box
+  codes: [keywrap_digest_mismatch]
+  test: tests/conformance/test_keyplane.py::test_digest_sort_key
+
+- id: CONF-WIRE-010
+  requirement: HKDF uses a 32-zero-byte salt, HMAC-SHA-256, L=32, asserted against frozen wrap vectors.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: white-box
+  codes: []
+  test: tests/conformance/test_keyplane.py::test_hkdf_salt
+
+- id: CONF-WIRE-011
+  requirement: >
+    A profile-defined opaque class in 0x40-0x7F that the profile declares is handled
+    exactly as 0x01: stored and served byte-identically, never parsed, admitted only
+    by a role that names it, and eligible as a prune target. One the profile has not
+    declared is refused unsupported_op_class.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [unsupported_op_class, role_forbids_op_class]
+  test: tests/conformance/test_wire.py::test_profile_opaque_classes
+
+- id: CONF-WIRE-012
+  requirement: >
+    The extension range is disabled by default: on a server implementing none, an op
+    in 0xC0-0xFF is refused unsupported_op_class, and the whole suite still passes
+    with such ops present in the log from an earlier deployment.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [unsupported_op_class]
+  test: tests/conformance/test_wire.py::test_extension_range_default_off
+
+- id: CONF-WIRE-013
+  requirement: >
+    An extension class is bound only from the position of its author's own ext_binding:
+    an op of that class at any earlier position is refused ext_class_not_active, a batch
+    of [ext_binding, ext op] is accepted, and [ext op, ext_binding] is refused at index
+    0. An op after the binding's write-once end position is likewise refused.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [ext_class_not_active]
+  test: tests/conformance/test_wire.py::test_extension_binding_is_positional
+
+- id: CONF-WIRE-014
+  requirement: >
+    An ext_binding naming a class this server implements, but under a different NAME, is
+    refused ext_name_mismatch carrying the expected name, and no binding is recorded.
+    Replaying a log written against another implementation's 0xC0 therefore fails at its
+    first ext_binding rather than processing those ops under the wrong meaning.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [ext_name_mismatch]
+  test: tests/conformance/test_wire.py::test_extension_name_must_match
+
+- id: CONF-WIRE-015
+  requirement: >
+    Bindings are member-scoped and are the binding of record. Member B's binding for a
+    class does not bind member A: A's op of that class is refused ext_class_not_active
+    while A holds no binding of its own, never judged against B's. And after the server's
+    implementation of that class is reconfigured to a different NAME, a further op from a
+    member whose recorded binding names the old one is refused ext_name_mismatch rather
+    than reinterpreted.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [ext_class_not_active, ext_name_mismatch]
+  test: tests/conformance/test_wire.py::test_binding_is_member_scoped_and_of_record
+
+- id: CONF-WIRE-016
+  requirement: >
+    A client refuses to author an op of an extension class for which it holds no live
+    binding of its own carrying the name it believes, and does not infer one from another
+    member's binding.
+  spec: "docs/01-the-log.md"
+  subject: client
+  observable: black-box
+  codes: []
+  test: tests/conformance/client/test_extensions.py::test_no_authoring_without_own_binding
+
+- id: CONF-WIRE-017
+  requirement: >
+    ext_binding shape rules are refused at decode: an unrecognised key, a missing type,
+    op_class or (on bind) name, a name present on an unbind, an op_class outside
+    192-255, and a name failing the token pattern or length. An unknown type is
+    unsupported_ext_binding_type carrying type.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [malformed_ext_binding_payload, unsupported_ext_binding_type]
+  test: tests/conformance/test_extensions.py::test_binding_shape_rules
+
+- id: CONF-WIRE-018
+  requirement: >
+    bind is refused per cause in order: ext_class_not_enabled for a class the deployment
+    does not permit, ext_name_mismatch for one it implements under another name, and 409
+    ext_class_already_bound when this member already holds a live binding for it.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [ext_class_not_enabled, ext_name_mismatch, ext_class_already_bound]
+  test: tests/conformance/test_extensions.py::test_bind_causes
+
+- id: CONF-WIRE-019
+  requirement: >
+    unbind is looked up under (Workspace, author, op_class): with no live binding it is
+    ext_class_not_bound, and another member's live binding is likewise not found. After
+    an unbind the member may bind the class again, under the same name or a different
+    one, and ops are judged against the interval their position falls in.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [ext_class_not_bound, ext_class_not_active]
+  test: tests/conformance/test_extensions.py::test_unbind_and_rebind_intervals
+
+- id: CONF-WIRE-020
+  requirement: >
+    Suite 0x01 with op_class 0xBF, or with any other server-read class that is not 0x80
+    or 0x81, gives encrypted_server_read_op.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: black-box
+  codes: [encrypted_server_read_op]
+  test: tests/conformance/test_wire.py::test_sealed_server_read_classes
+
+# ── Credentials ──────────────────────────────────────────────────────────────
+
+- id: CONF-CRED-001
+  requirement: >
+    A refresh token presented as a bearer access token on a device route answers 401
+    invalid_credential; the two flavours are not interchangeable.
+  spec: "docs/02-identity.md"
+  subject: server
+  observable: black-box
+  codes: [invalid_credential]
+  test: tests/conformance/test_credentials.py::test_access_token_separation
+
+- id: CONF-CRED-002
+  requirement: >
+    An access token presented to the refresh route, and a refresh token scoped to a
+    different device, each answer 401 invalid_refresh_token.
+  spec: "docs/02-identity.md"
+  subject: server
+  observable: black-box
+  codes: [invalid_refresh_token]
+  test: tests/conformance/test_credentials.py::test_refresh_token_separation
+
+- id: CONF-CRED-003
+  requirement: "A refresh token rotates: the presented token is revoked and a fresh pair issued."
+  spec: "docs/02-identity.md"
+  subject: server
+  observable: black-box
+  codes: [invalid_refresh_token]
+  test: tests/conformance/test_credentials.py::test_refresh_rotation
+
+- id: CONF-CRED-004
+  requirement: A live refresh token cannot be reconstructed from server storage.
+  spec: "docs/02-identity.md"
+  subject: server
+  observable: white-box
+  codes: []
+  test: tests/conformance/test_credentials.py::test_refresh_stored_irreversibly
+
+- id: CONF-CRED-005
+  requirement: "Every 401 response carries WWW-Authenticate: Bearer."
+  spec: "docs/README.md"
+  subject: server
+  observable: black-box
+  codes: [invalid_credential, invalid_refresh_token, bad_member_challenge]
+  test: tests/conformance/test_credentials.py::test_www_authenticate
+
+- id: CONF-CRED-006
+  requirement: >
+    POST /v1/members is gated by the Root-signed certificate in its body and consults
+    no stored Root: a certificate whose root_pk does not derive the Workspace it names
+    answers 403 workspace_not_reachable, and one Root did not sign answers 422
+    bad_root_signature — both before any Workspace exists.
+  spec: "docs/02-identity.md"
+  subject: server
+  observable: black-box
+  codes: [workspace_not_reachable, bad_root_signature]
+  test: tests/conformance/test_credentials.py::test_registration_is_certificate_gated
+
+- id: CONF-CRED-007
+  requirement: >
+    A member challenge is consumed by the attempt whether or not the signature
+    verifies, and a second use of the same nonce answers bad_member_challenge.
+  spec: "docs/02-identity.md"
+  subject: server
+  observable: black-box
+  codes: [bad_member_challenge]
+  test: tests/conformance/test_member_auth.py::test_challenge_consumed_on_attempt
+
+- id: CONF-CRED-008
+  requirement: >
+    POST /v1/members/{m}/challenge for an unregistered id answers 404 unknown_member
+    and creates no rate counter, so a subsequent registration is not pre-limited.
+  spec: "docs/02-identity.md"
+  subject: server
+  observable: black-box
+  codes: [unknown_member, member_challenge_rate_limited]
+  test: tests/conformance/test_member_auth.py::test_existence_before_counter
+
+# ── Authorization ────────────────────────────────────────────────────────────
+
+- id: CONF-AUTHZ-001
+  requirement: >
+    Exhaustive route x principal matrix: every route in §3.7 against no credential, a
+    User token, a member token with zero Grants, a member token per role, and a member
+    token with all Grants revoked, each yielding the documented status.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [invalid_credential, workspace_not_reachable, no_live_grant, role_forbids_op_class, keywrap_requires_owner]
+  test: tests/conformance/test_authz_matrix.py::test_full_matrix
+
+- id: CONF-AUTHZ-002
+  requirement: >
+    A Workspace id outside the profile's reachable set answers 403
+    workspace_not_reachable on every /v1/w/{w}/… route, before any other check.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [workspace_not_reachable]
+  test: tests/conformance/test_authz_matrix.py::test_reachability_first
+
+- id: CONF-AUTHZ-003
+  requirement: >
+    A member with zero Grants passes the member-GET bar; a member with at least one
+    Grant and none live is refused no_live_grant with revoked=true.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [no_live_grant]
+  test: tests/conformance/test_authz_matrix.py::test_pregrant_vs_revoked
+
+- id: CONF-AUTHZ-004
+  requirement: >
+    Revocation is per Workspace: a member revoked in one reachable Workspace still
+    passes the member-GET bar in the other.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [no_live_grant]
+  test: tests/conformance/test_authz_matrix.py::test_revocation_scoped_per_workspace
+
+- id: CONF-AUTHZ-005
+  requirement: >
+    A Root-signed control payload from a member with zero Grants is accepted; a rotate
+    from the same member is refused 403 no_live_grant.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [no_live_grant]
+  test: tests/conformance/test_authz_matrix.py::test_root_signed_bypass_is_narrow
+
+- id: CONF-AUTHZ-006
+  requirement: >
+    An op class the granted role does not admit is refused 403 role_forbids_op_class
+    carrying op_class and the sorted live roles.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [role_forbids_op_class]
+  test: tests/conformance/test_authz_matrix.py::test_role_matrix
+
+- id: CONF-AUTHZ-007
+  requirement: >
+    At current_epoch=3: epoch 3 accepted, epoch 2 accepted, epoch 1 refused 409
+    key_epoch_stale, epoch 4 refused 409 key_epoch_unknown. In an unkeyed Workspace no
+    epoch is refused.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: black-box
+  codes: [key_epoch_stale, key_epoch_unknown]
+  test: tests/conformance/test_epoch_floor.py::test_floor_and_ceiling
+
+- id: CONF-AUTHZ-008
+  requirement: An owner Grant not granted by root is refused owner_grant_requires_root.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [owner_grant_requires_root]
+  test: tests/conformance/test_control.py::test_owner_mint_ceiling
+
+- id: CONF-AUTHZ-009
+  requirement: An owner Grant revoked by anything but root is refused owner_revoke_requires_root.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [owner_revoke_requires_root]
+  test: tests/conformance/test_control.py::test_owner_revoke_ceiling
+
+- id: CONF-AUTHZ-010
+  requirement: An unrecognised role token is refused unknown_role, never ignored.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [unknown_role]
+  test: tests/conformance/test_control.py::test_unknown_role
+
+- id: CONF-AUTHZ-011
+  requirement: A member_kind outside the profile's set is refused unknown_member_kind.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [unknown_member_kind]
+  test: tests/conformance/test_control.py::test_unknown_member_kind
+
+- id: CONF-AUTHZ-012
+  requirement: >
+    A Grant the profile's admissibility predicate rejects is refused
+    member_kind_forbidden carrying member_kind.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [member_kind_forbidden]
+  test: tests/conformance/test_control.py::test_grant_admissibility
+
+# ── Member registry ──────────────────────────────────────────────────────────
+
+- id: CONF-MEM-001
+  requirement: POST /v1/members answers 201 on create and 200 with an identical body on an identical repeat.
+  spec: "docs/02-identity.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_members.py::test_create_then_idempotent_repeat
+
+- id: CONF-MEM-002
+  requirement: >
+    POST /v1/members refuses malformed keys and a key_id that is not the derivation.
+  spec: "docs/02-identity.md"
+  subject: server
+  observable: black-box
+  codes: [malformed_sign_pk, malformed_kex_pk, malformed_key_id, key_id_not_derived_from_sign_pk]
+  test: tests/conformance/test_members.py::test_key_validation
+
+- id: CONF-MEM-003
+  requirement: >
+    member_id_already_registered fires for a different User, a different sign_pk, a
+    conflicting kex_pk, and a supplied kex_pk where none is stored; omitting kex_pk
+    when one is stored answers 200.
+  spec: "docs/02-identity.md"
+  subject: server
+  observable: black-box
+  codes: [member_id_already_registered]
+  test: tests/conformance/test_members.py::test_conflict_cases
+
+- id: CONF-MEM-004
+  requirement: >
+    GET /v1/w/{w}/members lists exactly the Members whose Root-signed registration
+    named that Workspace, ordered by raw member_id ascending, with no chained field.
+  spec: "docs/02-identity.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_members.py::test_workspace_scoped_list
+
+- id: CONF-MEM-005
+  requirement: >
+    A member registered only in the other reachable Workspace, and a shell with no
+    registration, both appear in no Workspace member list.
+  spec: "docs/02-identity.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_members.py::test_scoping_exclusions
+
+- id: CONF-MEM-006
+  requirement: A pre-genesis GET /v1/w/{w}/members returns an empty list, not an error.
+  spec: "docs/02-identity.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_members.py::test_pregenesis_empty_list
+
+# ── Op log ───────────────────────────────────────────────────────────────────
+
+- id: CONF-LOG-001
+  requirement: A batch whose last op is refused leaves the log length unchanged and no earlier op pullable.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [author_member_mismatch]
+  test: tests/conformance/test_oplog.py::test_batch_atomicity
+
+- id: CONF-LOG-002
+  requirement: >
+    A batch of [genesis, member_register, grant, content] from a member holding no
+    Grant commits whole.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_oplog.py::test_enrolment_batch
+
+- id: CONF-LOG-003
+  requirement: A batch of [rotate to N+1, content at N+1] commits whole.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_oplog.py::test_rotate_then_content_same_batch
+
+- id: CONF-LOG-004
+  requirement: >
+    Stage 1 is a full pass: [content op with no Grant, malformed base64] answers on
+    index 1, not index 0.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [malformed_request]
+  test: tests/conformance/test_oplog.py::test_stage_one_is_a_full_pass
+
+- id: CONF-LOG-005
+  requirement: >
+    Stages 2-4 are per op in arrival order: [prune with empty targets, content op with
+    no Grant] answers prune_targets_empty on index 0.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [prune_targets_empty]
+  test: tests/conformance/test_oplog.py::test_stages_two_to_four_are_per_op
+
+- id: CONF-LOG-006
+  requirement: A batch exceeding limits.max_ops_per_batch answers 413 batch_too_large with max_ops.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [batch_too_large]
+  test: tests/conformance/test_oplog.py::test_batch_ceiling
+
+- id: CONF-LOG-007
+  requirement: "An empty ops array returns {\"results\": []} and changes nothing."
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_oplog.py::test_empty_batch
+
+- id: CONF-LOG-008
+  requirement: >
+    A repeat of (workspace, author, op_id) returns duplicate=true with the original
+    position, across batches and within one batch, where the first occurrence in a
+    batch returns duplicate=false.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_oplog.py::test_idempotency
+
+- id: CONF-LOG-009
+  requirement: >
+    All four replay exemptions hold: a replayed grant, revoke, prune and control op
+    each answer duplicate=true rather than their conflict codes.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [grant_id_already_used, already_revoked, prune_target_already_reprised]
+  test: tests/conformance/test_oplog.py::test_replay_exemptions
+
+- id: CONF-LOG-010
+  requirement: >
+    A gap in author_seq answers 409 author_chain_conflict with index, author_seq and
+    expected_author_seq; the concurrent-race form carries none of the three.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [author_chain_conflict]
+  test: tests/conformance/test_oplog.py::test_author_chain
+
+- id: CONF-LOG-011
+  requirement: >
+    Concurrent batches for one author never yield a 500: each resolves as
+    author_chain_conflict or duplicate=true.
+  spec: "docs/README.md"
+  subject: server
+  observable: black-box
+  codes: [author_chain_conflict]
+  test: tests/conformance/test_races.py::test_concurrent_author_batches
+
+- id: CONF-LOG-012
+  requirement: >
+    Under concurrent appends, no pull returns a position while a lower position is
+    still uncommitted; a cursor advanced across the race loses no op.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_races.py::test_position_visibility_ordering
+
+- id: CONF-LOG-013
+  requirement: No pull observes a partially committed batch.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_races.py::test_no_partial_batch_visible
+
+- id: CONF-LOG-014
+  requirement: >
+    A pull returns ops in ascending position with exact has_more, since exclusive, and
+    no server-side cursor is retained between pulls.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_oplog.py::test_pull_paging
+
+- id: CONF-LOG-015
+  requirement: >
+    limit outside 1..max_page_size and include_reprised other than "true"/"false" are
+    refused 422 malformed_request, never clamped or coerced.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [malformed_request]
+  test: tests/conformance/test_oplog.py::test_query_validation
+
+- id: CONF-LOG-016
+  requirement: A pre-genesis pull returns an empty page; a pre-genesis content POST answers 409 workspace_not_created.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [workspace_not_created]
+  test: tests/conformance/test_oplog.py::test_pregenesis_asymmetry
+
+- id: CONF-LOG-017
+  requirement: >
+    The server does not verify envelope signatures, prev_author_hash, observed_head,
+    the nonce under suite 0x00, or author_key_id: an op with a corrupt signature, a
+    wrong prev_author_hash, a non-zero observed_head and a stale author_key_id is
+    accepted and returned byte-identically.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_oplog.py::test_non_validation_list
+
+# ── Control ops ──────────────────────────────────────────────────────────────
+
+- id: CONF-CTL-001
+  requirement: >
+    A control body violating framing is refused: illegal length, payload_len
+    overrunning, non-zero padding.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [invalid_body_length, payload_overruns_body, non_zero_padding]
+  test: tests/conformance/test_control.py::test_control_framing
+
+- id: CONF-CTL-002
+  requirement: >
+    A control payload that is not well-formed, or carries an unserved type, is refused
+    with the observed type reported.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [malformed_control_payload, unsupported_control_type]
+  test: tests/conformance/test_control.py::test_control_decode
+
+- id: CONF-CTL-003
+  requirement: >
+    An all-zero prev_control_hash on a non-genesis type, and a non-zero one on a
+    genesis, are both refused control_chain_break — and control_chain_break precedes
+    genesis_not_first for a misplaced genesis with a non-zero link.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [control_chain_break, genesis_not_first]
+  test: tests/conformance/test_control.py::test_zero_link_rule
+
+- id: CONF-CTL-004
+  requirement: >
+    A genesis anywhere but batch index 0, or into a Workspace that already exists,
+    answers 409 genesis_not_first — including when two concurrent founders race.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [genesis_not_first]
+  test: tests/conformance/test_races.py::test_concurrent_genesis
+
+- id: CONF-CTL-005
+  requirement: >
+    Genesis certificate refusals fire in order and are distinct codes, with
+    cert_root_pk_mismatch never collapsed into bad_root_signature.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [bad_root_signature, cert_workspace_mismatch, cert_root_pk_mismatch, cert_member_mismatch, cert_key_mismatch]
+  test: tests/conformance/test_control.py::test_genesis_cert_ordering
+
+- id: CONF-CTL-006
+  requirement: An author's first op that is not its registering control op is refused member_register_not_first.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [member_register_not_first]
+  test: tests/conformance/test_control.py::test_register_must_be_first
+
+- id: CONF-CTL-007
+  requirement: >
+    Grant refusals fire in the documented order, with cert_granter_mismatch covering
+    both a certificate/payload granter disagreement and a member authority that is not
+    the posting author.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [cert_granter_mismatch, bad_grant_signature, unknown_grantee, grant_id_already_used]
+  test: tests/conformance/test_control.py::test_grant_ordering
+
+- id: CONF-CTL-008
+  requirement: >
+    Revoke refusals fire in the documented order, and unknown_grant is distinct from
+    unknown_grantee.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [bad_revoke_signature, unknown_grant, already_revoked]
+  test: tests/conformance/test_control.py::test_revoke_ordering
+
+- id: CONF-CTL-009
+  requirement: >
+    A rotate whose from_epoch is not the current epoch answers 409
+    rotate_epoch_conflict with expected_from_epoch; two concurrent rotations from one
+    epoch produce exactly one winner.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: black-box
+  codes: [rotate_epoch_conflict]
+  test: tests/conformance/test_races.py::test_concurrent_rotation
+
+- id: CONF-CTL-010
+  requirement: A rotate with to_epoch != from_epoch + 1 is refused malformed_control_payload.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: black-box
+  codes: [malformed_control_payload]
+  test: tests/conformance/test_control.py::test_single_step_rotation
+
+- id: CONF-CTL-011
+  requirement: "Revocation is grant-granular: revoking a granter leaves the Grants it issued live."
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_control.py::test_no_cascade
+
+# ── Prune ops ────────────────────────────────────────────────────────────────
+
+- id: CONF-PRUNE-001
+  requirement: >
+    Prune shape rules are refused at decode: empty targets, a duplicate by seq, a
+    duplicate by (author, author_seq), and more than 1000 targets.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [prune_targets_empty, prune_duplicate_target, prune_targets_too_many, malformed_prune_payload]
+  test: tests/conformance/test_prune.py::test_shape_rules
+
+- id: CONF-PRUNE-002
+  requirement: >
+    A prune naming a reprise that is neither staged in the same batch nor stored
+    under the same author is refused prune_reprise_not_found.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [prune_reprise_not_found]
+  test: tests/conformance/test_prune.py::test_reprise_must_be_own
+
+- id: CONF-PRUNE-003
+  requirement: >
+    Target cross-checks are refused per target: missing, control, prune, any other
+    bit-7 class, mismatched attestation, already reprised, and self-reference.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [prune_target_not_found, prune_target_is_control, prune_target_is_prune, prune_target_is_server_read, prune_target_attestation_mismatch, prune_target_already_reprised, prune_target_is_its_own_reprise]
+  test: tests/conformance/test_prune.py::test_target_cross_checks
+
+- id: CONF-PRUNE-004
+  requirement: >
+    A prune marks and never deletes: default pulls hide reprised ops and
+    include_reprised=true serves them back byte-identically, at the member-GET bar.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_prune.py::test_soft_delete_visibility
+
+- id: CONF-PRUNE-005
+  requirement: Two concurrent prunes sharing a target yield prune_target_already_reprised for the loser, never a 500.
+  spec: "docs/README.md"
+  subject: server
+  observable: black-box
+  codes: [prune_target_already_reprised]
+  test: tests/conformance/test_races.py::test_concurrent_prune
+
+# ── Append effects ───────────────────────────────────────────────────────────
+
+- id: CONF-EFFECT-001
+  requirement: >
+    A Grant is judged positionally: an op at a position between granted and revoked is
+    authorised, and one outside is not, regardless of certificate clocks.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [no_live_grant]
+  test: tests/conformance/test_effects.py::test_positional_verdict
+
+- id: CONF-EFFECT-002
+  requirement: A revocation position is write-once and a second revoke does not move it.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [already_revoked]
+  test: tests/conformance/test_effects.py::test_revocation_immutable
+
+- id: CONF-EFFECT-003
+  requirement: >
+    Losing the last live Grant revokes every refresh token scoped to that Member and
+    closes its live signal sockets with 4403.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [invalid_refresh_token]
+  test: tests/conformance/test_effects.py::test_revocation_cascade
+
+- id: CONF-EFFECT-004
+  requirement: >
+    A non-duplicate append pokes every subscriber after the commit; a pure-duplicate
+    batch pokes nobody; a subscriber woken by a poke finds the ops already pullable.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_signal.py::test_poke_conditions
+
+- id: CONF-EFFECT-005
+  requirement: A materialised rotate creates the epoch with no wraps, and epoch-keys omits it until its wraps land.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_keyplane.py::test_rotate_creates_empty_epoch
+
+# ── Signal socket ────────────────────────────────────────────────────────────
+
+- id: CONF-SIG-001
+  requirement: >
+    The socket is accepted before authentication, and a successful handshake is
+    acknowledged by an immediate empty text frame.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_signal.py::test_handshake
+
+- id: CONF-SIG-002
+  requirement: >
+    No auth frame within the deadline, a close instead of one, or a binary first frame
+    each close with 4400.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: ["4400"]
+  test: tests/conformance/test_signal.py::test_close_4400
+
+- id: CONF-SIG-003
+  requirement: An invalid token, or a valid User token, closes with 4401.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: ["4401"]
+  test: tests/conformance/test_signal.py::test_close_4401
+
+- id: CONF-SIG-004
+  requirement: >
+    An unreachable Workspace or a revoked Member closes with 4403, at the handshake and
+    on an already-open socket.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: ["4403"]
+  test: tests/conformance/test_signal.py::test_close_4403
+
+- id: CONF-SIG-005
+  requirement: >
+    The server sends only empty text frames and the literal "ping": no frame carries a
+    position, an author, a count or an envelope, across a full session.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_signal.py::test_frame_vocabulary
+
+- id: CONF-SIG-006
+  requirement: N appends before a subscriber wakes deliver one poke, not N.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_signal.py::test_coalescing
+
+- id: CONF-SIG-007
+  requirement: Access-token expiry does not close a live socket.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_signal.py::test_expiry_does_not_close
+
+# ── Vault ────────────────────────────────────────────────────────────────────
+
+- id: CONF-ESC-001
+  requirement: >
+    The first write establishes root_pk and must be version 1; a first write at any
+    other version answers 409 vault_version_regression with stored_version 0.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: black-box
+  codes: [vault_version_regression]
+  test: tests/conformance/test_vault.py::test_trust_on_first_use
+
+- id: CONF-ESC-002
+  requirement: >
+    A later write is checked against the pinned root_pk, so a signature by an unrelated
+    key answers 403 bad_vault_signature and the slot is unchanged.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: black-box
+  codes: [bad_vault_signature]
+  test: tests/conformance/test_vault.py::test_unpinned_root_cannot_overwrite
+
+- id: CONF-ESC-003
+  requirement: A write at or below the stored version answers 409 vault_version_regression with that version.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: black-box
+  codes: [vault_version_regression]
+  test: tests/conformance/test_vault.py::test_version_monotonic
+
+- id: CONF-ESC-004
+  requirement: >
+    Malformed vault fields are refused individually, and the blob itself is never
+    length-checked.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: black-box
+  codes: [malformed_vault_blob, malformed_vault_signature, malformed_root_pk, malformed_vault_version]
+  test: tests/conformance/test_vault.py::test_field_validation
+
+- id: CONF-ESC-005
+  requirement: GET on an unwritten slot answers 404 no_vault_record and spends no quota.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: black-box
+  codes: [no_vault_record, vault_fetch_rate_limited]
+  test: tests/conformance/test_vault.py::test_existence_before_quota
+
+- id: CONF-ESC-006
+  requirement: >
+    Reads beyond the per-window limit answer 429 vault_fetch_rate_limited with
+    retry_after_seconds bounded by the window, under fixed-window semantics.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: black-box
+  codes: [vault_fetch_rate_limited]
+  test: tests/conformance/test_vault.py::test_fetch_rate_limit
+
+- id: CONF-ESC-007
+  requirement: Every served vault read is durably recorded before the bytes leave.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: white-box
+  codes: []
+  test: tests/conformance/test_vault.py::test_read_audited
+
+- id: CONF-ESC-008
+  requirement: Two concurrent vault writes resolve with exactly one winner and a version verdict for the loser.
+  spec: "docs/README.md"
+  subject: server
+  observable: black-box
+  codes: [vault_version_regression]
+  test: tests/conformance/test_races.py::test_concurrent_vault_writes
+
+- id: CONF-ESC-009
+  requirement: >
+    A write declaring a different root_pk moves the pin when it is signed by the
+    currently pinned Root, and answers 403 bad_vault_signature when it is signed by
+    the incoming key instead.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: black-box
+  codes: [bad_vault_signature]
+  test: tests/conformance/test_vault.py::test_pin_moves_only_under_outgoing_root
+
+- id: CONF-ESC-010
+  requirement: >
+    A vault locator that is not 64 lowercase hex characters answers 404 not_found, and
+    no rate-limit counter is spent on it.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: black-box
+  codes: [not_found]
+  test: tests/conformance/test_vault.py::test_malformed_locator_is_unrouted
+
+# ── Root handover ────────────────────────────────────────────────────────────
+
+- id: CONF-HAND-001
+  requirement: >
+    A root_handover whose from_root_pk is not the Workspace's current Root answers 422
+    cert_root_pk_mismatch; one the outgoing Root did not sign answers 422
+    bad_root_signature.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [cert_root_pk_mismatch, bad_root_signature]
+  test: tests/conformance/test_handover.py::test_handover_verification
+
+- id: CONF-HAND-002
+  requirement: >
+    After a handover lands, certificates signed by the incoming Root are accepted and a
+    second handover from the retired key answers 422 cert_root_pk_mismatch.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [cert_root_pk_mismatch]
+  test: tests/conformance/test_handover.py::test_current_root_moves
+
+- id: CONF-HAND-003
+  requirement: >
+    A handover changes nothing already recorded: every registration stays registered,
+    every live grant stays live, and the Workspace id is unchanged.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_handover.py::test_handover_is_not_retroactive
+
+- id: CONF-HAND-004
+  requirement: >
+    A device certified by the incoming Root passes reachability for the Workspace, even
+    though that Root does not derive its id.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [workspace_not_reachable]
+  test: tests/conformance/test_handover.py::test_reachability_after_handover
+
+- id: CONF-HAND-005
+  requirement: >
+    A client verifies each certificate against the Root in force at that certificate's
+    position, not the current one, so a log spanning a handover replays without refusal.
+  spec: "docs/03-authority.md"
+  subject: client
+  observable: black-box
+  codes: [bad_root_signature]
+  test: tests/conformance/client/test_handover.py::test_positional_root_verification
+
+# ── Key plane ────────────────────────────────────────────────────────────────
+
+- id: CONF-KEY-001
+  requirement: A wrap set for epoch > 0 with no materialised rotate answers 409 rotate_not_materialised.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: black-box
+  codes: [rotate_not_materialised]
+  test: tests/conformance/test_keyplane.py::test_rotate_must_precede_wraps
+
+- id: CONF-KEY-002
+  requirement: >
+    A wrap set that does not hash to the committed digest answers 422
+    keywrap_digest_mismatch with expected_digest.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: black-box
+  codes: [keywrap_digest_mismatch]
+  test: tests/conformance/test_keyplane.py::test_digest_gate
+
+- id: CONF-KEY-003
+  requirement: >
+    Epoch 0 requires keywrap_digest when no record exists (missing_keywrap_digest
+    otherwise) and ignores it once one does, so a byte-identical replay without it
+    answers 200.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: black-box
+  codes: [missing_keywrap_digest, malformed_keywrap_digest]
+  test: tests/conformance/test_keyplane.py::test_epoch_zero_digest
+
+- id: CONF-KEY-004
+  requirement: A byte-identical re-upload answers 200; a different set for a written epoch is refused.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: black-box
+  codes: [keywrap_digest_mismatch, keywrap_already_written]
+  test: tests/conformance/test_keyplane.py::test_replay_and_replacement
+
+- id: CONF-KEY-005
+  requirement: >
+    Per-entry validation is refused with index: malformed wrap, malformed kex_key_id, an
+    unknown member, an unregistered kex_key_id, and a duplicate member.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: black-box
+  codes: [malformed_keywrap, malformed_kex_key_id, unknown_keywrap_member, kex_key_id_not_registered, duplicate_keywrap_member]
+  test: tests/conformance/test_keyplane.py::test_entry_validation
+
+- id: CONF-KEY-006
+  requirement: A malformed escrow wrap or an out-of-range epoch is refused before authorization-independent work.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: black-box
+  codes: [malformed_escrow_wrap, malformed_key_epoch]
+  test: tests/conformance/test_keyplane.py::test_top_level_validation
+
+- id: CONF-KEY-007
+  requirement: A non-authority member uploading wraps is refused 403 keywrap_requires_owner with revoked.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: black-box
+  codes: [keywrap_requires_owner]
+  test: tests/conformance/test_keyplane.py::test_owner_only
+
+- id: CONF-KEY-008
+  requirement: >
+    GET keywraps/me returns only the calling Member's wraps, every epoch, ordered by
+    epoch ascending.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_keyplane.py::test_own_wraps_only
+
+- id: CONF-KEY-009
+  requirement: >
+    GET epoch-keys requires any live Grant, is ordered by epoch ascending, and omits
+    epochs whose escrow wrap has not been uploaded.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: black-box
+  codes: [no_live_grant]
+  test: tests/conformance/test_keyplane.py::test_epoch_keys
+
+- id: CONF-KEY-010
+  requirement: Two concurrent uploads of one epoch resolve idempotently or with a documented refusal, never a 500.
+  spec: "docs/README.md"
+  subject: server
+  observable: black-box
+  codes: [keywrap_digest_mismatch, keywrap_already_written]
+  test: tests/conformance/test_races.py::test_concurrent_wrap_uploads
+
+# ── Discipline ───────────────────────────────────────────────────────────────
+
+- id: CONF-DISC-001
+  requirement: >
+    Every refusal on every core route carries {"detail": {"code": ...}}; no route
+    returns a bare string detail.
+  spec: "docs/README.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_discipline.py::test_error_shape_uniform
+
+- id: CONF-DISC-002
+  requirement: Every per-op refusal on POST ops carries the zero-based batch index.
+  spec: "docs/README.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_discipline.py::test_index_on_per_op
+
+- id: CONF-DISC-003
+  requirement: Every 429 carries retry_after_seconds.
+  spec: "docs/02-identity.md"
+  subject: server
+  observable: black-box
+  codes: [member_challenge_rate_limited, vault_fetch_rate_limited]
+  test: tests/conformance/test_discipline.py::test_retry_after_present
+
+- id: CONF-DISC-004
+  requirement: >
+    No code outside Appendix A is emitted by any route under any input in the
+    conformance corpus.
+  spec: "docs/05-compatibility.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_discipline.py::test_no_unlisted_codes
+
+- id: CONF-DISC-005
+  requirement: >
+    No documented race yields a 500; the only 5xx in the suite is
+    GET /health/db's 503.
+  spec: "docs/README.md"
+  subject: server
+  observable: black-box
+  codes: [store_unavailable]
+  test: tests/conformance/test_discipline.py::test_no_five_hundreds
+
+- id: CONF-DISC-006
+  requirement: Bodies of any class with bit 7 clear are never parsed.
+  spec: "docs/README.md"
+  subject: server
+  observable: white-box
+  codes: []
+  test: tests/conformance/test_discipline.py::test_no_content_parsing
+
+# ── Profile ──────────────────────────────────────────────────────────────────
+
+- id: CONF-PROF-001
+  requirement: A server refuses to start with any Appendix C obligation unset.
+  spec: "docs/reference/profile-obligations.md"
+  subject: profile
+  observable: white-box
+  codes: []
+  test: tests/conformance/test_profile.py::test_no_defaults
+
+- id: CONF-PROF-002
+  requirement: >
+    PROTOCOL_NAMESPACE matches its pattern, is 1-32 bytes, contains no slash, and is
+    reported unchanged in GET /health.
+  spec: "docs/04-keys.md"
+  subject: profile
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_profile.py::test_namespace_constraints
+
+- id: CONF-PROF-003
+  requirement: >
+    Under a derived reachability policy, workspace ids are UUID-v5 over the frozen
+    namespaces with the 32 raw bytes of the founding Root public key, asserted
+    against frozen vectors.
+  spec: "docs/03-authority.md"
+  subject: profile
+  observable: black-box
+  codes: [workspace_not_reachable]
+  test: tests/conformance/test_profile.py::test_derived_ids
+
+- id: CONF-PROF-004
+  requirement: The role table contains exactly one role named owner.
+  spec: "docs/03-authority.md"
+  subject: profile
+  observable: white-box
+  codes: []
+  test: tests/conformance/test_profile.py::test_single_authority_role
+
+# ── Client obligations ───────────────────────────────────────────────────────
+
+- id: CONF-CLI-001
+  requirement: A client verifies every pulled envelope's Ed25519 signature and refuses on failure.
+  spec: "docs/01-the-log.md"
+  subject: client
+  observable: black-box
+  codes: [bad_signature]
+  test: tests/conformance/client/test_verification.py::test_signature_checked
+
+- id: CONF-CLI-002
+  requirement: A client verifies prev_author_hash against its own verified head.
+  spec: "docs/01-the-log.md"
+  subject: client
+  observable: black-box
+  codes: []
+  test: tests/conformance/client/test_verification.py::test_chain_checked
+
+- id: CONF-CLI-003
+  requirement: A client refuses an op with a non-zero observed_head in v1.
+  spec: "docs/01-the-log.md"
+  subject: client
+  observable: black-box
+  codes: []
+  test: tests/conformance/client/test_verification.py::test_observed_head_zero
+
+- id: CONF-CLI-004
+  requirement: A client verifies author_key_id against the key learned from that Member's registration.
+  spec: "docs/01-the-log.md"
+  subject: client
+  observable: black-box
+  codes: []
+  test: tests/conformance/client/test_verification.py::test_key_id_checked
+
+- id: CONF-CLI-005
+  requirement: >
+    A client enforces all three padding rules on every body it unframes, on the
+    decrypted plaintext under suite 0x01.
+  spec: "docs/01-the-log.md"
+  subject: client
+  observable: black-box
+  codes: [invalid_body_length, payload_overruns_body, non_zero_padding]
+  test: tests/conformance/client/test_framing.py::test_padding_rules
+
+- id: CONF-CLI-006
+  requirement: >
+    A client refuses an opaque op (bit 7 clear) at suite 0x00 whose epoch it holds a
+    key for, and raises aead_failure for a body that does not authenticate.
+  spec: "docs/04-keys.md"
+  subject: client
+  observable: black-box
+  codes: [plaintext_at_encrypted_epoch, aead_failure]
+  test: tests/conformance/client/test_suites.py::test_downgrade_and_aead
+
+- id: CONF-CLI-007
+  requirement: >
+    A client refuses a non-genesis control op carrying a zero prev_control_hash, even
+    when its own control state is empty.
+  spec: "docs/03-authority.md"
+  subject: client
+  observable: black-box
+  codes: [control_chain_break]
+  test: tests/conformance/client/test_control.py::test_truncated_log_detected
+
+- id: CONF-CLI-008
+  requirement: >
+    A client checks that the root_pk served with a vault record equals the Root it
+    recovered from the blob, and treats a mismatch as a corrupt record rather than as
+    a key to adopt.
+  spec: "docs/04-keys.md"
+  subject: client
+  observable: white-box
+  codes: []
+  test: tests/conformance/client/test_vault.py::test_served_root_pk_cross_checked
+
+- id: CONF-CLI-009
+  requirement: A client does not treat a WebSocket accept as authentication success.
+  spec: "docs/01-the-log.md"
+  subject: client
+  observable: white-box
+  codes: []
+  test: tests/conformance/client/test_signal.py::test_accept_is_not_auth
+
+- id: CONF-CLI-010
+  requirement: >
+    A client transmits no value derived from the wrapping secret except the locator:
+    the secret itself appears in no request body, header, query parameter or log sink.
+  spec: "docs/04-keys.md"
+  subject: client
+  observable: white-box
+  codes: []
+  test: tests/conformance/client/test_vault.py::test_secret_never_travels
+
+- id: CONF-CLI-011
+  requirement: >
+    A client surfaces an unrecognised refusal code verbatim and does not fold it into
+    another code's meaning.
+  spec: "docs/05-compatibility.md"
+  subject: client
+  observable: black-box
+  codes: []
+  test: tests/conformance/client/test_codes.py::test_unknown_code_surfaced
+
+- id: CONF-CLI-012
+  requirement: >
+    A client terminalises every code Appendix A marks deterministic, and has no
+    retry-by-default fallback for unrecognised codes.
+  spec: "docs/05-compatibility.md"
+  subject: client
+  observable: black-box
+  codes: [keywrap_digest_mismatch, genesis_not_first, unsupported_contract_version]
+  test: tests/conformance/client/test_codes.py::test_terminalisation
+
+- id: CONF-CLI-013
+  requirement: >
+    A client re-writing a vault slot carries the same master wrap key forward: after a
+    credential change, epoch keys minted before the change still open from the new
+    record.
+  spec: "docs/04-keys.md"
+  subject: client
+  observable: black-box
+  codes: []
+  test: tests/conformance/client/test_vault.py::test_master_wrap_key_survives_rewrite
+
+- id: CONF-CLI-014
+  requirement: >
+    A client does not derive the master wrap key from Root: after a root_handover and
+    the vault re-write that follows it, every escrow wrap minted before the handover
+    still opens.
+  spec: "docs/04-keys.md"
+  subject: client
+  observable: black-box
+  codes: []
+  test: tests/conformance/client/test_vault.py::test_master_wrap_key_survives_handover
+
+# ── Admission ────────────────────────────────────────────────────────────────
+
+- id: CONF-ADM-001
+  requirement: >
+    A POST /v1/members carrying a workspace_genesis certificate that the server
+    declines to admit answers 403 admission_refused, and no member record is created.
+  spec: "docs/02-identity.md"
+  subject: server
+  observable: black-box
+  codes: [admission_refused]
+  test: tests/conformance/test_admission.py::test_founding_registration_gated
+
+- id: CONF-ADM-002
+  requirement: >
+    Admission is consulted at founding registration and nowhere else: with the gate
+    closed after a Workspace exists, genesis of a second Workspace, grants, ops,
+    keywraps and vault writes all still succeed.
+  spec: "docs/02-identity.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_admission.py::test_gate_is_registration_only
+
+- id: CONF-ADM-003
+  requirement: >
+    A joining device registers with no admission credential: a member_register
+    certificate for an existing Workspace, signed by that Workspace's current Root,
+    is accepted with the gate closed.
+  spec: "docs/02-identity.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_admission.py::test_joining_is_self_admitting
+
+- id: CONF-ADM-007
+  requirement: >
+    The joining branch is checked, not assumed: a member_register certificate for a
+    Workspace that does not exist answers 409 workspace_not_created, and one signed by
+    a Root that is not that Workspace's current Root answers 422 cert_root_pk_mismatch.
+  spec: "docs/02-identity.md"
+  subject: server
+  observable: black-box
+  codes: [workspace_not_created, cert_root_pk_mismatch]
+  test: tests/conformance/test_admission.py::test_joining_branch_verified
+
+- id: CONF-ADM-008
+  requirement: >
+    Certificate type alone selects the branch: a workspace_genesis certificate takes
+    the admitted path even when that Workspace already exists, and the server performs
+    no Workspace lookup to decide.
+  spec: "docs/02-identity.md"
+  subject: server
+  observable: black-box
+  codes: [admission_refused]
+  test: tests/conformance/test_admission.py::test_branch_is_syntactic
+
+- id: CONF-ADM-004
+  requirement: >
+    A first vault write by a Root that has founded no Workspace answers 403
+    vault_requires_genesis; the same write succeeds once its genesis has landed.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: black-box
+  codes: [vault_requires_genesis]
+  test: tests/conformance/test_vault.py::test_first_write_requires_genesis
+
+- id: CONF-ADM-005
+  requirement: >
+    A later vault write is never admission-checked: a re-wrap succeeds against a slot
+    whose Root still holds its Workspace, with the gate closed.
+  spec: "docs/04-keys.md"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_vault.py::test_rewrite_not_admission_checked
+
+- id: CONF-CLI-015
+  requirement: >
+    A founding client lands its workspace_genesis before writing the vault slot that
+    recovers it.
+  spec: "docs/04-keys.md"
+  subject: client
+  observable: black-box
+  codes: [vault_requires_genesis]
+  test: tests/conformance/client/test_vault.py::test_genesis_before_vault
+
+- id: CONF-ADM-006
+  requirement: >
+    The Roundelay-Admission header is honoured only on POST /v1/members: it is ignored
+    on every other route and is never accepted in place of a device access token.
+  spec: "docs/02-identity.md"
+  subject: server
+  observable: black-box
+  codes: [invalid_credential]
+  test: tests/conformance/test_admission.py::test_header_scoped_to_registration
