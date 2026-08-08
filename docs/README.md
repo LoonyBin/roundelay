@@ -90,11 +90,11 @@ Read them in this order. Each one only depends on the ones above it.
 
 Reference material, extracted so the narrative does not carry it:
 
-- [Refusal codes](reference/refusal-codes.md) — all 117, with status, cause and whether a retry can help
+- [Refusal codes](reference/refusal-codes.md) — all 119, with status, cause and whether a retry can help
 - [Glossary](reference/glossary.md) — every term, defined once
 - [Retained state](reference/retained-state.md) — what a server must remember
 - [Profile obligations](reference/profile-obligations.md) — the eleven decisions a deployment must make
-- [Conformance](../conformance/checklist.yaml) — 194 machine-readable items
+- [Conformance](../conformance/checklist.yaml) — 209 machine-readable items
 
 ---
 
@@ -192,6 +192,7 @@ error shape — a client that branches on `detail.code` never meets a bare strin
 | `413` | Too big |
 | `422` | Well-formed JSON, invalid contents |
 | `429` | Rate limited; `retry_after_seconds` says how long |
+| `503` | The backing store is unavailable — `GET /health/db` only |
 
 **[S]** `401` responses carry `WWW-Authenticate: Bearer`.
 
@@ -215,8 +216,10 @@ boolean, never a string. Ranges:
 
 | Field | Range |
 |---|---|
-| `epoch`, `from_epoch`, `to_epoch`, `key_epoch` | 0 … 2³²−1 |
-| `since`, prune `seq`, prune `author_seq`, escrow `version` | see [The Log](01-the-log.md) |
+| `epoch`, `from_epoch`, `to_epoch`, `key_epoch`, `after_epoch` | 0 … 2³²−1 |
+| `since` → [The Log](01-the-log.md) | 0 … 2⁶³−1 |
+| prune `seq`, prune `author_seq` → [The Log](01-the-log.md) | 1 … 2⁶³−1 |
+| vault `version` → [Keys](04-keys.md) | 1 … 2⁶³−1 |
 | `limit` | 1 … the server's advertised maximum |
 | HLC `wall_ms` | −2⁶³ … 2⁶³−1 |
 | HLC `counter` | 0 … 2⁶³−1 |
@@ -246,8 +249,13 @@ browser client MAY omit CORS entirely.
 > A wildcard origin and `allow-credentials` are mutually exclusive in every
 > browser. A deployment that sets both has switched its own CORS off.
 
-**[S]** A deployment SHOULD bound total request body size and MUST document the
-refusal. The batch ceiling limits the *count* of ops, not their size.
+**[S]** A deployment SHOULD bound total request body size and MUST document the bound.
+A body over it is refused `413 request_too_large`, on any route. The batch ceiling
+limits the *count* of ops, not their size, and answers `batch_too_large` instead.
+
+> The bound is the deployment's to choose; the code is not. The vocabulary is closed,
+> so the one limit every route shares needs a name in it — otherwise each deployment
+> invents its own, and a client cannot tell "too big" from "malformed" anywhere.
 
 ### Clocks
 
@@ -269,8 +277,9 @@ breaks, no position moves. Reprising an op hides it from ordinary reads; a
 `hard_prune` op can later destroy those hidden bytes, and only those — the server
 never deletes on its own initiative, only what a signed op in the log instructed.
 
-**The server never reads content.** It reads envelope headers, and the bodies of
-exactly two op classes — the two it must act on. Nothing else, ever.
+**The server never reads content.** It reads envelope headers, and the bodies of the
+classes it must act on — the few with bit 7 set: control, prune, `ext_binding`, and
+any extension class the profile enables. Nothing else, ever.
 
 **The server verifies less than it stores.** No envelope signature check, no
 chain check. Those belong to whoever pulls.

@@ -31,11 +31,11 @@ ones above it.
 
 Reference material, kept out of the narrative:
 
-- [Refusal codes](docs/reference/refusal-codes.md) — all 117, with cause and whether a retry helps
+- [Refusal codes](docs/reference/refusal-codes.md) — all 119, with cause and whether a retry helps
 - [Glossary](docs/reference/glossary.md)
 - [Retained state](docs/reference/retained-state.md) — what a server must remember
 - [Profile obligations](docs/reference/profile-obligations.md) — the eleven decisions a deployment makes
-- [Conformance](conformance/checklist.yaml) — 194 machine-readable items
+- [Conformance](conformance/checklist.yaml) — 209 machine-readable items
 
 ---
 
@@ -43,8 +43,8 @@ Reference material, kept out of the narrative:
 
 A running server is **core plus exactly one profile**. The core defines the
 transport, the trust model and the refusal vocabulary. The profile supplies what is
-genuinely a product decision: the protocol namespace, the Workspace topology, the
-where admission is enforced, the role table, the member kinds, and a handful of tuned
+genuinely a product decision: the protocol namespace, the Workspace topology, where
+admission is enforced, the role table, the member kinds, and a handful of tuned
 constants.
 
 There are **no defaults**. A server refuses to start with any profile decision
@@ -77,9 +77,9 @@ cheaply. The signed log is the truth, and every device works out permissions for
 itself by replaying it. Tampering with server state cannot elevate anyone.
 
 **The identity is a keypair, not an account.** There is no identity provider and no
-user record. A Workspace's id derives from the public key of the Root that founded
-it, and Root itself lives wrapped in a vault slot the server cannot open. Every
-identity it handles is 32 bytes; nothing here maps one to a person.
+user record. A Workspace's id is bound at genesis to the Root that founded it, and
+Root itself lives wrapped in a vault slot the server cannot open. Every identity it
+handles is 32 bytes; nothing here maps one to a person.
 
 **Metadata is not protected, and at scale it is an org chart.** The server sees when
 each op arrived, which device wrote it, which identity holds that device, who was
