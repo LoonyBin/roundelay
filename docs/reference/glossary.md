@@ -123,9 +123,11 @@ decision. [Authority](../03-authority.md)
 may bring into being. Asked at genesis and nowhere else.
 [Authority](../03-authority.md)
 
-**holder** — `holder_root_pk`. The identity that holds a device, named in its
-registration beside the Workspace Root that signed it. Attribution only: it grants
-nothing and the server never interprets it. [Authority](../03-authority.md)
+**holder** — `holder_ref`. The identity that holds a device, named in its registration
+beside the Workspace Root that signed it, as 32 opaque bytes whose derivation is a
+profile row. Attribution only: it grants nothing, the server never interprets it, and
+the core promises only that equal bytes mean one identity *within one Workspace*.
+[Authority](../03-authority.md)
 
 **reprise op** — class `0x04`. Holds the combined effect of the ops folded into it,
 stated again. Opaque: the server treats it exactly as content and never reads it. Its

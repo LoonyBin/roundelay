@@ -9,7 +9,7 @@ implementation keeps is its own business.
 | **Per op** — envelope bytes; transport position; Workspace; class; key epoch; op id; author; author key id; author position; reprised-by position | idempotency, chain check, epoch floor, prune cross-checks, `include_reprised` |
 | **Uniqueness** — `(workspace, author, op_id)` and `(workspace, author, author_seq)` | idempotency and the author chain; **enforced by storage, not application code** |
 | **Per device** — id; control signing key; content signing key; sealing key; the three derived key ids | `kex_key_id_not_registered`, `author_member_mismatch`, `author_key_class_mismatch` |
-| **Per registration** — `(Workspace, device)`; member kind; **holder Root public key** | the access gate, member listing, `unknown_grantee`, `no_registration` |
+| **Per registration** — `(Workspace, device)`; member kind; **`holder_ref`, 32 opaque bytes** | the access gate, member listing, `unknown_grantee`, `no_registration` |
 | **Per Workspace** — existence and genesis position; **current Root public key** | `workspace_not_created`, certificate verification, `cert_root_pk_mismatch` |
 | **Per delegation** — `(workspace, delegation_id)`; delegate public key; start position; end position (**write-once**) | root-authority signature checks, `delegation_id_already_used`, `already_revoked` |
 | **Per grant** — `(workspace, grant_id)`; device; role; granter; start position; end position (**write-once**) | the positional verdict, `grant_id_already_used`, `already_revoked` |

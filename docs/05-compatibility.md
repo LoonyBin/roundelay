@@ -215,7 +215,7 @@ fails closed.
 and refused until something claims it properly.
 
 **[W]** Two ranges of the class byte are **not** core-assigned and so are not part
-of this table — see [The Log](01-the-log.md#the-class-byte):
+of this table — see [The Log](01-the-log.md#3-the-class-byte):
 
 | Range | Owner | Advertised |
 |---|---|---|

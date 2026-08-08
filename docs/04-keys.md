@@ -1043,7 +1043,7 @@ grew when Workspaces became shareable, in the direction that matters most.
 - how ops group into Workspaces
 - roughly how large each payload is, to the nearest size class
 - which devices are registered in which Workspace — and **which of them one identity
-  holds**, because `holder_root_pk` groups them ([Authority](03-authority.md))
+  holds**, because `holder_ref` groups them ([Authority](03-authority.md))
 - who holds which permissions, and every change: grants, revokes, delegations
 - when keys were rotated
 - which vault slots share a pinned Root, and so belong to one identity (§7)
@@ -1085,10 +1085,17 @@ better to say so than to let somebody discover it:
 
 None of that is content. All of it is an org chart with a clock attached.
 
-**One join is worth naming on its own.** A vault slot's pinned Root and a
-registration's `holder_root_pk` are the same 32 bytes, so the two tables can be
-joined: *the identity behind this vault slot is a member of those Workspaces.* That
-crosses the key plane and the log plane, which nothing else in this design does.
+**One join is worth naming on its own**, and it is the one thing on this list a
+profile can take away. Under a profile whose `holder_ref` is the holder's Root — the
+obvious choice — it is the same 32 bytes the vault slot pins, so the two tables join:
+*the identity behind this vault slot is a member of those Workspaces.* That crosses
+the key plane and the log plane, which nothing else in this design does.
+
+A profile whose `holder_ref` the server cannot reverse closes it
+([Authority](03-authority.md)) — but only if devices also register under a **fresh
+identity per Workspace**, because a device's three public keys are otherwise the same
+bytes everywhere it joins and rebuild the join by themselves. Both halves or neither;
+one alone changes nothing.
 
 ### Holding the keys does not withhold the metadata
 
@@ -1112,6 +1119,9 @@ Not much, honestly, and the short list is short for a reason:
 - **size** is already blurred by the padding ladder, which is coarse on purpose
 - **timing** blurs if a client batches rather than writing through
 - **grouping** shrinks if reprises fold larger sets, or if the client never folds
+- **cross-Workspace identity** is the one entry that can be removed rather than
+  blurred — an unreversible `holder_ref` and a fresh device identity per Workspace,
+  together — and it costs a profile row and a keypair per Workspace per device
 - **everything else** goes away only by not sharing a server with an observer you
   care about
 

@@ -453,7 +453,7 @@ different device, or naming a device that does not exist.
 **Credential:** a device token, unrevoked.
 
 ```json
-← {"members": [{"member_id": "…", "holder_root_pk": "…",
+← {"members": [{"member_id": "…", "holder_ref": "…",
                 "control_pk": "…", "content_pk": "…", "kex_pk": "…",
                 "key_ids": { … }}]}
 ```
@@ -470,8 +470,9 @@ and the result reflects it. A device appears **iff a Root-signed registration na
    └── alice's tablet   shell, never accepted     → appears in neither
 ```
 
-**[S]** Entries carry the `holder_root_pk` from the registration, so a caller can
-group a Workspace's devices by the identity holding them without asking anyone.
+**[S]** Entries carry the `holder_ref` from the registration, so a caller can group a
+Workspace's devices by the identity holding them without asking anyone. Grouping is by
+**equality within this Workspace** and nothing more ([Authority](03-authority.md)).
 
 **[S]** Ordered by raw `member_id` bytes ascending, so two implementations return the
 same page for the same state.

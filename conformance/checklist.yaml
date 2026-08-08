@@ -184,7 +184,7 @@ items:
   spec: "docs/README.md"
   subject: server
   observable: black-box
-  codes: [malformed_request, malformed_sign_pk]
+  codes: [malformed_request, malformed_sign_pk, malformed_base64]
   test: tests/conformance/test_wire.py::test_strict_base64
 
 - id: CONF-WIRE-007
@@ -478,7 +478,7 @@ items:
 
 - id: CONF-SHARE-001
   requirement: >
-    A device whose holder_root_pk differs from the Workspace's Root is registered,
+    A device held by an identity other than the Workspace's Root is registered,
     granted and able to write, given a registration this Workspace's Root signed.
   spec: "docs/03-authority.md"
   subject: server
@@ -488,8 +488,9 @@ items:
 
 - id: CONF-SHARE-002
   requirement: >
-    holder_root_pk is stored and returned verbatim on GET /v1/w/{w}/members, and the
-    server branches on it nowhere.
+    holder_ref is stored and returned verbatim on GET /v1/w/{w}/members, and the
+    server branches on it nowhere. It is 32 opaque bytes: the server applies no key
+    validation to it and refuses no value for its contents.
   spec: "docs/03-authority.md"
   subject: server
   observable: black-box
@@ -1404,7 +1405,7 @@ items:
 # ── Profile ──────────────────────────────────────────────────────────────────
 
 - id: CONF-PROF-001
-  requirement: A server refuses to start with any Appendix C obligation unset.
+  requirement: A server refuses to start with any profile obligation unset.
   spec: "docs/reference/profile-obligations.md"
   subject: profile
   observable: white-box
@@ -1440,6 +1441,17 @@ items:
   codes: []
   test: tests/conformance/test_profile.py::test_single_authority_role
 
+- id: CONF-PROF-005
+  requirement: >
+    The profile declares a holder_ref derivation, and every registration the
+    deployment's own clients write uses it, so two devices held by one identity carry
+    equal holder_ref within a Workspace.
+  spec: "docs/reference/profile-obligations.md"
+  subject: profile
+  observable: white-box
+  codes: []
+  test: tests/conformance/test_profile.py::test_holder_ref_derivation_declared
+
 # ── Client obligations ───────────────────────────────────────────────────────
 
 - id: CONF-CLI-001
@@ -1465,6 +1477,17 @@ items:
   observable: black-box
   codes: []
   test: tests/conformance/client/test_verification.py::test_observed_head_zero
+
+- id: CONF-CLI-016
+  requirement: >
+    A client groups devices by holder_ref only within one Workspace, and never
+    concludes that equal holder_ref across two Workspaces is one identity, or that
+    unequal holder_ref across two Workspaces is two.
+  spec: "docs/03-authority.md"
+  subject: client
+  observable: black-box
+  codes: []
+  test: tests/conformance/client/test_verification.py::test_holder_ref_not_cross_workspace
 
 - id: CONF-CLI-004
   requirement: A client verifies author_key_id against the key learned from that Member's registration.

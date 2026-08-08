@@ -20,6 +20,7 @@ to start with any of them unset.
 | 8 | Deploy label format | optional; opaque to clients either way | [Compatibility](../05-compatibility.md) |
 | 9 | Opaque class set | the classes the profile assigns in `0x40–0x7F`; optional, absent means none | [The Log](../01-the-log.md) |
 | 10 | Enabled extension classes | the set of classes in `0xC0–0xFF` the deployment permits — **may be empty**, but every member carries a mandatory NAME | [The Log](../01-the-log.md) |
+| 11 | `holder_ref` derivation | how a registration's 32 opaque bytes are computed; the holder's Root public key is a legal answer, and so is anything the server cannot reverse | [Authority](../03-authority.md) |
 
 **[P]** A profile SHOULD name itself `<namespace>/<revision>`, and **[S]** a server
 MUST report that name as `profile` in `GET /health`.
@@ -32,6 +33,12 @@ and a core implementation MUST NOT provide a place to declare it.
 **[P]** A profile MUST NOT specify an admission *mechanism*, and the core defines no
 field, header or format for one. Row 3 records where the gate lives, never how it
 decides.
+
+> Row 11 asks for a derivation and these two forbid one, which is not a contradiction:
+> the test is whether two implementations have to agree. A vault secret is computed on
+> one device and consumed by the same device, so nothing breaks if two clients differ.
+> A `holder_ref` is written by one client and compared by another, so a deployment
+> whose clients differ has silently stopped grouping anybody's devices.
 
 > Not an omission — a boundary. The derivation happens on the device, the server
 > cannot observe it, and anything a profile said about it would be a claim no
@@ -84,6 +91,16 @@ fork:
 > Adding a class invalidates nothing already written, which is the test the other
 > rows already apply.
 
+**[P]** Changing **row 11** invalidates nothing already signed, and is still close to
+irreversible. Registrations written under the old derivation carry values that no
+longer equal the new ones, so a holder's older devices group apart from their newer
+ones — for ever, in an append-only log. The repair is to re-register every device, and
+there is no partial version of it.
+
+> Which makes it the one row whose damage is silent on both sides. Nothing refuses,
+> no signature fails, and the symptom is that "Alice's devices" quietly returns two
+> answers depending on when you look.
+
 > Row 10 is not a fork precisely because the profile is not the record. The profile
 > says what this deployment *permits* and under what NAME; a `0xBF` `ext_binding`
 > op says which **member** agreed to that name, and from which position. Turning a
@@ -123,6 +140,7 @@ Every row answered, no optional row taken up — the smallest thing that starts:
 | 8 | deploy label | `^\d+\.\d+\.\d+$` |
 | 9 | opaque classes | none |
 | 10 | extension classes | none |
+| 11 | `holder_ref` | the holder's Root public key, verbatim |
 
 > Three rows answered "none", which is an answer rather than an omission — a server
 > started against this table serves `0x01`, `0x04`, `0x80` and `0x81`, and refuses

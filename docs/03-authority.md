@@ -351,7 +351,7 @@ same codes. One certificate, one vocabulary, whichever door it arrives at.
 ```json
 // registration — signed by the Workspace's Root
 {"workspace_id": "…", "member_id": "…", "member_kind": "<token>",
- "holder_root_pk":  "<b64 32B>",
+ "holder_ref":  "<b64 32B>",
  "control_pk": "<b64 32B>", "control_key_id": "<b64 8B>",
  "content_pk": "<b64 32B>", "content_key_id": "<b64 8B>",
  "kex_pk":     "<b64 32B>", "kex_key_id":     "<b64 8B>",
@@ -446,12 +446,41 @@ verifies an envelope signature; it compares two registered ids against one byte.
 and prune ops — holds both keys and gains nothing from the split. It is a person's
 device the separation is for.
 
-### `holder_root_pk`: whose device this is
+### `holder_ref`: whose device this is
 
 **[W]** Every registration names the **identity that holds the device**, alongside
 the Workspace Root that signs the certificate. In a Workspace one identity owns, the
-two are the same key. In a shared one they differ: the Workspace's Root admits the
-device, and `holder_root_pk` records whose it is.
+two name the same identity. In a shared one they differ: the Workspace's Root admits
+the device, and `holder_ref` records whose it is.
+
+**[W]** It is **32 opaque bytes**, and the core fixes exactly one property of them:
+
+```
+   two registrations carry the same holder_ref
+   iff one identity holds both   —   within a single Workspace
+```
+
+**[P]** How the bytes are computed is a **profile row** ([profile
+obligations](reference/profile-obligations.md)). The holder's Root public key is the
+obvious answer and a profile that says so is conformant; so is one that names a value
+the server cannot reverse, because no rule here reads the bytes.
+
+> The field was called `holder_root_pk` until this was noticed, and the name was doing
+> more than the design needed. Every rule that touches it uses **equality** — group a
+> Workspace's devices by who holds them — and equality does not require the value to
+> be a public key. Naming it after one committed every deployment, for ever and in a
+> signed document, to publishing which identity holds which device in the clear.
+>
+> Which matters because that plaintext is only half of a join. The other half is the
+> device keys, which are the same bytes in every Workspace a device joins and cannot
+> be hidden. Closing the join takes both halves — a per-Workspace device identity,
+> which is the client's to choose, and a `holder_ref` the server cannot reverse, which
+> is this row. Neither half buys anything on its own, and the core's job is to leave
+> both reachable rather than to decide.
+
+**[C]** Cross-Workspace equality is **not** promised. A client MUST NOT conclude that
+registrations in two Workspaces carrying the same bytes are one identity, nor that
+different bytes are different identities.
 
 **[S]** The server **stores it and never interprets it**. It gates nothing, grants
 nothing, and appears in no check.
@@ -462,9 +491,10 @@ nothing, and appears in no check.
 > never agreed, and it would need a counter-signature and the holder's Root out of
 > its vault to join anything.
 
-**[W]** It is a **public key, and nothing else**. No certificate in this protocol
-carries a name, an email address, a display string, or any other human-readable
-identifier — not beside the holder, not anywhere.
+**[W]** It carries **no human-readable identifier**, whatever the profile derives it
+from. No certificate in this protocol carries a name, an email address, a display
+string, or any other identifier a person would recognise — not beside the holder, not
+anywhere.
 
 > Certificates go into the log. The log is append-only, replicated to every member
 > device, and never deleted. A name written into one is a name that can never be
@@ -493,7 +523,7 @@ want — a managed laptop and not a personal tablet — and it stays expressible
 ### Genesis carries its own founder's registration
 
 **[W]** A genesis certificate embeds a full key block for the device that founded the
-Workspace — including its `holder_root_pk` — and that block **is** that device's
+Workspace — including its `holder_ref` — and that block **is** that device's
 registration. The founder writes no separate `member_register`.
 
 > It has to work this way. The envelope is signed by the founder's key, but nothing
@@ -764,7 +794,8 @@ codes.**
 
 > A second genesis is not a fork for the server to resolve: it holds no control chain
 > of its own, so it refuses and leaves the tie-break to the devices that do. Two
-> holders of one Root may legitimately both observe an empty log and both author one.
+> devices holding one Root may legitimately both observe an empty log and both author
+> one.
 > Exactly one lands; the loser always gets `genesis_not_first`, including when the
 > race is only caught at commit time.
 
