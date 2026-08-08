@@ -56,8 +56,10 @@ Start here. Almost every question in this layer is answered by "who holds this?"
  ║  MASTER WRAP KEY                  32 bytes, one per identity         ║
  ║  ───────────────                                                     ║
  ║  opens: every epoch's escrow wrap, past and present                  ║
- ║  at rest: ONLY inside the vault record, beside Root                  ║
- ║  server: NEVER                                                       ║
+ ║  needed by: whoever mints a rotation — every epoch seals one (§5)    ║
+ ║  at rest: on the server, ONLY inside the vault record, beside Root   ║
+ ║  in a client: warm, or only during a ceremony — custody policy, §7   ║
+ ║  server: NEVER in a form it can open                                 ║
  ╚══════════════════════════════════════════════════════════════════════╝
 
  ╔══════════════════════════════════════════════════════════════════════╗
@@ -186,7 +188,7 @@ informational, and never used to build a signature.
 > `bad_root_signature` — the code that is supposed to mean "forged, unrecoverable"
 > rather than "you're pointed at the wrong deployment". Advertising it is mandatory.
 
-### The eleven domains
+### The thirteen domains
 
 **[W]** A domain is `<namespace>/<document>/v<n>`:
 
@@ -197,12 +199,27 @@ informational, and never used to build a signature.
 | `workspace-genesis` | a genesis certificate |
 | `grant` | a grant certificate |
 | `revoke` | a revoke certificate |
+| `delegate` | a delegation certificate |
+| `revoke-delegation` | a delegation-revocation certificate |
 | `root-handover` | a handover certificate |
 | `auth-challenge` | `member_id ‖ nonce` — the device login of [Identity](02-identity.md) |
 | `vault` | `locator ‖ version ‖ blob` — the vault record |
 | `keywrap` | the member-wrap key derivation and its associated data |
 | `epoch-key-escrow` | the escrow-wrap associated data |
 | `keywrap-digest` | the wrap-set commitment |
+
+**[W]** Every multi-byte integer inside a framed construction is **big-endian**, at
+the fixed width its annotation gives — `u32` is 4 bytes, `u64` is 8. The same
+convention the envelope header already states, held here so that no construction in
+this table depends on a default two libraries might disagree about.
+
+**[W]** `member_id` in the `auth-challenge` preimage is the **16 raw bytes** of the
+id — never a textual spelling.
+
+> The same rule as the uuid5 name and the digest sort key, for the same reason: a
+> textual identifier has spellings — case, dashes, braces — and two peers that spell
+> it differently sign different bytes and never learn why. Raw bytes have no
+> spelling. The hazard is not mitigated; it does not exist.
 
 **[W]** **The domain string is the version.** No signed document carries a version
 field. A field addition or a semantic change ships under a new `v<n>`, so a
@@ -371,7 +388,9 @@ This is stage 2's fourth check in the [append pipeline](01-the-log.md#the-pipeli
       key_epoch_stale ◄──────────────────┴──────────► key_epoch_unknown
 ```
 
-**[S]** `409 key_epoch_stale` when more than one epoch behind. `409
+**[S]** The floor judges **sealed** ops only — an unsealed op carries `key_epoch` 0 by
+rule ([The Log](01-the-log.md#2-the-envelope)), so there is nothing there to be stale.
+On a sealed op: `409 key_epoch_stale` when more than one epoch behind, `409
 key_epoch_unknown` when above the current epoch. Both carry `key_epoch` and
 `current_epoch`.
 
@@ -383,6 +402,20 @@ key_epoch_unknown` when above the current epoch. Both carry `key_epoch` and
 > The ceiling exists because no wrap set is minted for an epoch nothing rotated to.
 > Such an op could never be opened by anyone, so admitting it would park permanently
 > unreadable bytes in the log.
+
+**[C]** The slack is a **drain, not a licence.** A client MUST seal every **new** op at
+the newest epoch it holds a key for, and MUST use any epoch below that one only for ops
+it had already signed when the rotation landed.
+
+> The floor bounds distance, not time: nothing stops a writer sitting at current−1 for
+> ever, and the server cannot tell the difference — a stale-but-legal epoch is exactly
+> what the slack permits. So this is a client rule or it is nothing.
+>
+> What it protects is the only remedy a revocation has. A revoke is followed by a
+> rotate ([Authority](03-authority.md#what-revocation-does-not-reach)) precisely so
+> that what comes next is sealed under a key the revoked device never receives. A
+> member that keeps writing at the old epoch hands it next month's content too, and
+> the remedy quietly becomes worth nothing while every check still passes.
 
 **[S]** An **unkeyed** Workspace refuses neither. There is no epoch to be stale
 against.
@@ -469,6 +502,30 @@ in it binds the wrap to one slot:
 
 One per `(Workspace, epoch)`. This is the recovery route from §1.
 
+**[C]** The `master_wrap_key` above is the **founding identity's** — the one this
+Workspace's recovery route depends on (§8), and no other. A member that does not hold
+it MUST NOT author a `rotate`.
+
+> **No server can check this**, and none ever will. The digest commits to whatever was
+> sealed, and 72 bytes sealed under the wrong key hash exactly as well as 72 sealed
+> under the right one. A wrap minted under a second identity's master wrap key, or
+> under a key a client invented for the occasion, is accepted, committed, and served
+> back — indistinguishable from a good one until somebody takes the recovery route and
+> it will not open. That is months later, and it is the one moment the escrow existed
+> for.
+>
+> Which is why the rule lands on the **author of the rotate** rather than on the
+> upload. The digest is computed before the rotate is signed, so the party that mints
+> the epoch key is already the party that must hold the key its escrow is sealed under.
+> There is no later point at which anything could be repaired: the published set is
+> final (§8).
+
+The construction is versioned by its domain, `<ns>/epoch-key-escrow/v1`, like every
+other one here. Sealing every Workspace's escrow to one identity is therefore a
+property of **v1**, not an invariant of the design — a different construction, a
+per-Workspace recovery key for instance, ships as a new domain by the in-band path
+([Compatibility](05-compatibility.md#5-in-band-versioning-the-served-sets)).
+
 ### The digest: what stops the server curating the set
 
 If the server could decide *which* wraps exist, it could quietly omit one device
@@ -512,6 +569,66 @@ spelling.
 
 Sorted at all so the digest describes the **set**, not the upload order the server
 could shuffle.
+
+### What the commitment costs: a join is a rotation
+
+Freezing the set is what makes it trustworthy. The bill arrives on the way in.
+
+**[S]** A published wrap set is **final** (§8). A device registered after epoch *N*'s
+set was published therefore has **no member wrap for any epoch ≤ N**, and no route in
+this protocol can mint it one.
+
+```
+   epoch            1        2        3        4
+   set published    ●        ●        ●        ●
+                                               ▲
+                                               │  its first wrap can appear
+   device registered here ─────────────────────┘  here, and nowhere earlier
+
+   epochs 1..3      no member wrap, ever
+```
+
+**[C]** An owner admitting a member to a keyed Workspace MUST therefore **rotate**.
+Registering them is not enough: until a rotation lands, the new device holds a live
+grant and cannot open a byte.
+
+> Which is the same rotation a revoke calls for
+> ([Authority](03-authority.md#what-revocation-does-not-reach)), run for the opposite
+> reason. One arithmetic, both directions: a new key, minted for exactly the members
+> who should hold it.
+
+And that rotation carries the escrow rule above with it, which **delegation does not
+relieve**: a delegate holds a signing key, while an escrow wrap is a sealing under the
+founding identity's master wrap key, which no delegation confers ([Authority
+§6](03-authority.md#6-delegation-keeping-root-cold)). So in a Workspace an
+organisation owns, admitting a member is not something the admitting delegate can
+finish — the rotation is work for whoever keeps that key
+([§7](#guidance--custody-of-a-shared-identity)).
+
+Two things reach history anyway. They are not alternatives to one another:
+
+- The **founding identity** recovering onto a new device needs none of this. Its
+  master wrap key opens every escrow wrap ever minted, so §8's recovery route hands it
+  the whole history with no rotation at all.
+- For **anyone else**, the only route is a **reprise** under the current epoch
+  ([the log](01-the-log.md#7-replacing-old-ops-reprise-and-prune)) — the content
+  restated in an op sealed under a key they do hold, which appends and marks rather
+  than handing out a key.
+
+> Read the second as a deterrent, not a recipe. That a member cannot read what was
+> said before they arrived is a property rather than an oversight — here it falls out
+> of the digest instead of being added on top. A deployment that reprises its history
+> on every join has discovered it wanted a different protocol.
+
+**[C]** An owner who left an existing member **out** of an epoch's set is in the same
+position, and has no repair for it. The published set is final, so that epoch cannot be
+fixed in place: the remedy is the **next rotation**, with that member in the set — plus
+a **reprise** of anything they must be able to read that was sealed under the epochs
+they were left out of.
+
+> Which is worth naming because it does not feel like a join, and is treated as one.
+> The machinery does not distinguish an accident from an arrival; both are a device
+> without a wrap for an epoch that is already committed.
 
 ---
 
@@ -576,11 +693,11 @@ a `root_handover` changes.
 > with it — while every escrow wrap ever minted is still sealed under the old one.
 > Every epoch key before the handover becomes unrecoverable from the vault.
 >
-> And there is no repair. `PUT …/keywraps` is whole-set-per-epoch, and
-> `keywrap_already_written` refuses a *different* set for an epoch already
-> published — the rule that stops a stolen authority credential swapping the key set
-> out from under devices that already read it. It blocks re-minting here too, and it
-> should: the two cases are indistinguishable from the server's side.
+> And there is no repair. `PUT …/keywraps` is whole-set-per-epoch, and a *different*
+> set for an epoch already published is refused (§8) — the rule that stops a stolen
+> authority credential swapping the key set out from under devices that already read
+> it. It blocks re-minting here too, and it should: the two cases are
+> indistinguishable from the server's side.
 >
 > Deriving from the **founding** Root instead survives the handover and defeats its
 > purpose. The founding secret is exactly what an attacker holds in the case that
@@ -704,6 +821,13 @@ writes are not checked: the slot exists and the pinned signature is the gate.
 mints Root MUST land its `workspace_genesis` before writing the slot that will
 recover it.
 
+**[W]** `version` is an integer in `1 … 2⁶³−1`. There is no version 0 — a first write is
+version 1 — and one outside the range is `422 malformed_vault_version`.
+
+> The ceiling is the HLC counter's, for the HLC counter's reason ([the
+> conventions](README.md#values-on-the-wire)): a version exists to be compared exactly,
+> and above 2⁶³−1 not every implementation can.
+
 **[S]** Concurrent writes resolve with exactly one winner; the loser learns what the
 slot now holds rather than silently overwriting.
 
@@ -736,8 +860,11 @@ record verbatim.
 
 **[S]** **Every served read is recorded durably, before the bytes leave.**
 
-> A silent read is exactly what an attack on this slot needs. Recording each one
-> turns it into something that can be shown to whoever owns the identity.
+> A silent read is exactly what an attack on this slot needs. Recording each one is
+> what makes the question answerable at all: the deployment's own tooling can put
+> the record in front of whoever owns the identity — a surface [the
+> overview](README.md) keeps out of scope — and a slot with no record is a slot
+> whose reads nobody can ever account for.
 
 **[S]** **Rate-limited per locator**, and **existence is checked before the quota is
 spent**.
@@ -838,11 +965,40 @@ the organisation has used.
   `root_handover` only when a share leaves in hostile hands, which is expensive and is
   the thing the quorum size is chosen to avoid.
 
-**Delegation is what keeps the ceremony rare.** With [Authority
-§6](03-authority.md#6-delegation-keeping-root-cold), the quorum is needed for three
-things only — founding, handing over, and rewriting the vault. Every registration,
-grant and revoke goes through a delegate. A deployment convening its quorum weekly has
-something delegable that it has not delegated.
+**Delegation is what keeps most of the ceremony rare.** With [Authority
+§6](03-authority.md#6-delegation-keeping-root-cold), the quorum is needed for four
+things — founding, handing over, rewriting the vault, and **minting a rotation**, which
+seals an escrow wrap under the master wrap key lying beside Root in the same blob (§5).
+Every registration, grant and revoke goes through a delegate instead. A deployment
+convening its quorum for one of *those* has something delegable it has not delegated.
+
+**The fourth one does not stay rare, and that is the whole problem.** A rotation is
+what admits a member (§5) and what makes a revoke bite
+([Authority](03-authority.md#what-revocation-does-not-reach)), so its rate is the rate
+people join and leave — not the rate an organisation founds Workspaces. Two postures,
+and a deployment is choosing between them whether it names them or not:
+
+- **Strict.** The master wrap key never outlives a ceremony. Every rotation convenes
+  the quorum, so admissions are batched — a week's arrivals cost one convening, and a
+  new joiner waits for it. Nothing warm exists to steal, and a departure costs a
+  re-split and nothing more.
+- **Warm custodian.** The deployment keeps the master wrap key in the custodian's
+  secure storage (below) and drops Root, which the same vault fetch also yields.
+  Rotation — and therefore admitting a member, and therefore making a revoke bite —
+  becomes routine custodian work, at whatever notice the business needs. The cost is a
+  standing copy of the key that opens **every epoch key ever minted**, past and future,
+  sitting on one machine between uses.
+
+Nothing splits the difference cleanly, because the key that opens next month's epoch is
+the key that opens every previous one. What a deployment can do is bound the exposure
+by hand: keep the custodian small and local, and treat its storage as the thing whose
+compromise is equivalent to losing all content — because it is.
+
+**The core cannot observe either posture and takes no position.** It never sees the key
+under either one, and no request, refusal or field differs between them. The trade —
+how often the quorum meets, against how long the key that opens all content sits
+warm — is the deployment's, and it is the reason to make it deliberately rather than by
+whichever client shipped first.
 
 ### Guidance — the custodian
 
@@ -855,6 +1011,12 @@ continuously reachable. An organisation may keep it on a small machine inside it
 network — a **custodian** — that comes up to sign and goes back down. It is how a
 quorum-held Root stays cold in practice, and what
 [delegation](03-authority.md#6-delegation-keeping-root-cold) keeps it cold *for*.
+
+**What it keeps is a separate choice from whether it exists.** One vault fetch yields
+Root and the master wrap key together, and the two need not be put away in the same
+place: the strict posture above holds both only for the length of a ceremony, while the
+warm one keeps the master wrap key — the half rotation needs — and drops Root back to
+the quorum. A custodian that stays up only to rotate is still a custodian.
 
 **A custodian is a client.** It speaks the same routes every other client speaks, and
 the server gives it nothing — no mode, no registration, no awareness that it exists.
@@ -892,8 +1054,17 @@ decision was made on a device before the bytes arrived.
    "wraps": [{"member_id": "…", "kex_key_id_b64": "…", "wrap_b64": "…"}, …],
    "escrow_wrap_b64": "…",
    "keywrap_digest_b64": "…"}
-← {"wraps": [ …the caller's own wraps, every epoch… ]}
+← {"wraps": [{"epoch": 3, "member_id": "…", "kex_key_id_b64": "…",
+              "wrap_b64": "…"}]}
 ```
+
+**[S]** The response echoes the caller's own wrap for **the epoch just published**,
+and nothing else. The write's answer carries only what the write established; the
+full history lives behind the paged route (`GET …/keywraps/me`, below).
+
+**[S]** This route is **never refused for consumption**. It sits on The Log's
+never-gated list ([§11](01-the-log.md#bounding-what-a-workspace-consumes)), because a
+rotation whose wrap set cannot land never completes.
 
 **[S]** **Whole set, never incremental.**
 
@@ -917,12 +1088,28 @@ stored commitment is authoritative.
 > strictness. The field is *known*, and the retry loops depend on a re-upload of the
 > same bytes succeeding.
 
+**[S]** On that **first** epoch-0 write the set MUST hash to the digest the request
+supplies — `keywrap_digest_mismatch` otherwise — and only then does that digest become
+the commitment.
+
+> The uploader chose both halves, so the check catches nothing malicious. What it
+> buys is that the commitment `GET /epoch-keys` later serves always describes the set
+> actually stored, so a mismatch a client computes for itself is never an artefact the
+> server let in. It also keeps the code's meaning uniform across epochs: *the set does
+> not hash to the commitment in force* — log-committed for epoch ≥ 1,
+> request-established on the epoch-0 first write.
+
 **[S]** **Byte-identical replay is idempotent** and answers `200`. A *different* set
 for an epoch already published is refused.
 
 > The wraps an epoch was published with are not a later caller's to replace. Allowing
 > it would let a stolen authority credential swap the key set out from under devices
 > that already read it.
+
+**[S]** **Which refusal that is depends on the epoch.** For `epoch > 0` a different
+set is refused `keywrap_digest_mismatch`: it fails the digest that epoch's `rotate`
+committed to the log. At epoch 0, where the request's digest is ignored once a record
+exists, a different set is refused `keywrap_already_written`.
 
 **[S]** Refusals, in order:
 
@@ -936,6 +1123,11 @@ for an epoch already published is refused.
      ─► rotate_not_materialised ─► keywrap_digest_mismatch
      ─► keywrap_already_written
 ```
+
+> The last two are ordered, not alternatives, and that ordering is where the epoch
+> split above comes from: a log-committed digest catches a different set first, so a
+> comparison against the record already stored is only ever reached where there is no
+> log-committed digest to check.
 
 **[S]** `kex_key_id_not_registered` fires when the id is not the one derived from the
 device's **registered** sealing key.
@@ -955,13 +1147,20 @@ rather than retry — see [Compatibility](05-compatibility.md).
 
 **Credential:** a device token, unrevoked.
 
-```json
-← {"wraps": [{"epoch": 1, "member_id": "…", "kex_key_id_b64": "…",
-              "wrap_b64": "…"}, …]}
+```
+  ?after_epoch=3         exclusive; absent means from the start
+  &limit=500             1 … the advertised maximum
 ```
 
-**[S]** **Scoped to the calling device and not parameterised** — there is no id to
-get wrong, because the route has nowhere to put one. Ordered by epoch ascending.
+```json
+← {"wraps": [{"epoch": 1, "member_id": "…", "kex_key_id_b64": "…",
+              "wrap_b64": "…"}, …],
+   "has_more": true}
+```
+
+**[S]** **Scoped to the calling device, and it carries no member id** — there is
+nothing to get wrong, because the route has nowhere to put one. Ordered by epoch
+ascending.
 
 > They would be unopenable by anyone else anyway, which makes the scoping a tidiness
 > rather than the defence.
@@ -969,16 +1168,55 @@ get wrong, because the route has nowhere to put one. Ordered by epoch ascending.
 **[S]** **Every epoch, kept for ever.** Reprised ops are retained, so content
 sealed at any past epoch may still need opening.
 
+**[S]** The page is that ordering, cut. `after_epoch` is **exclusive**: the page begins
+at the first epoch strictly above it.
+
+**[S]** It has **no default value.** Absent, the page begins at the start;
+`after_epoch=0` is a different request, and skips epoch 0 — which a Workspace keyed at
+genesis has (§4).
+
+> Unlike `since` on [`GET …/ops`](01-the-log.md#9-reading-get-v1wworkspace_idops),
+> where position 0 is below every op and so is a safe default. Epochs start at 0, so no
+> in-range value means *before everything*, and absence has to carry it.
+
+**[S]** `limit` runs 1 … `limits.max_page_size` and defaults to
+`limits.default_page_size`. The ceilings [Compatibility
+§7](05-compatibility.md#7-discovery-the-health-endpoints) advertises govern this route
+**exactly as they govern `GET …/ops`** — one advertised pair, for every paged route.
+
+**[S]** `has_more` is **exact**: true iff at least one further wrap exists after this
+page.
+
+**[S]** An `after_epoch` outside 0 … 2³²−1, or a `limit` outside range, is
+`422 malformed_request` — **never clamped**, on the same rule and for the same reason
+as [the log's own page](01-the-log.md#9-reading-get-v1wworkspace_idops). These are the
+**only** parameters the route accepts; any other is `422 unknown_request_field`
+([Compatibility §4](05-compatibility.md#4-unknown-fields-are-refused)).
+
 ### `GET /v1/w/{workspace_id}/epoch-keys` — the escrow wraps
 
 **Credential:** a device with **any** live grant.
 
-```json
-← {"epochs": [{"epoch": 1, "escrow_wrap_b64": "…",
-               "keywrap_digest_b64": "…"}, …]}
+```
+  ?after_epoch=3         exclusive; absent means from the start
+  &limit=500             1 … the advertised maximum
 ```
 
-**[S]** Ordered by epoch ascending.
+```json
+← {"epochs": [{"epoch": 1, "escrow_wrap_b64": "…",
+               "keywrap_digest_b64": "…"}, …],
+   "has_more": true}
+```
+
+**[S]** Ordered by epoch ascending, and paged on that ordering by the same two
+parameters as `keywraps/me` above, under the same rules: `after_epoch` **exclusive**
+with no default value, `limit` 1 … `limits.max_page_size` defaulting to
+`limits.default_page_size`, `has_more` **exact**, and either parameter out of range
+`422 malformed_request` — **never clamped**. The ceilings [Compatibility
+§7](05-compatibility.md#7-discovery-the-health-endpoints) advertises govern this route
+**exactly as they govern `GET …/ops`**. These are the **only** parameters the route
+accepts; any other is `422 unknown_request_field`
+([Compatibility §4](05-compatibility.md#4-unknown-fields-are-refused)).
 
 **[S]** **Useless without the wrapping secret.** An escrow wrap opens only under the
 master wrap key, which exists only inside the vault record.
@@ -990,10 +1228,15 @@ nothing else.
 
 > Which means a member of somebody else's Workspace cannot recover a fresh device
 > into it from their own credential: their vault holds their Root, not this
-> Workspace's master wrap key. An owner has to mint them wraps, exactly as at first
-> enrolment. That is the right answer for a Workspace a company owns — losing a laptop
-> is an IT ticket, not a self-service reset — but it is a fact about shared Workspaces
-> worth knowing before it is discovered.
+> Workspace's master wrap key. An owner has to register the device and **rotate**,
+> exactly as at first enrolment — a new epoch's set is the only place its first wrap
+> can appear (§5). And the rotation itself needs that same founding master wrap key to
+> seal the new epoch's escrow wrap, so it is whoever keeps that key who performs it,
+> not whichever owner happened to take the ticket
+> ([§7](#guidance--custody-of-a-shared-identity)).
+> That is the right answer for a Workspace a company owns — losing a laptop is an IT
+> ticket, not a self-service reset — but it is a fact about shared Workspaces worth
+> knowing before it is discovered.
 
 > Anyone who can already open these can already open Root — which is why the bar is
 > deliberately low, and why this route is **not** rate-limited or audited the way the
@@ -1006,6 +1249,12 @@ This is the route that makes a fresh device work with **no second device online*
    credential ─► locator ─► vault record ─► Root + master wrap key
                                                      │
                                                      ▼
+                                   member_register, then an OWNER grant
+                                   to itself, both signed by that Root —
+                                   bar 2 needs the grant, not the
+                                   registration alone
+                                                     │
+                                                     ▼
                                         GET /epoch-keys  →  every escrow wrap
                                                      │
                                                      ▼
@@ -1013,17 +1262,65 @@ This is the route that makes a fresh device work with **no second device online*
                                                      │
                                                      ▼
                                          decrypt the entire history
-                                                     │
-                                                     ▼
-                                  and then, holding the authority role,
-                                  mint and upload its OWN member wraps
 ```
+
+**[S]** This route sits at **bar 2** ([Authority](03-authority.md#8-the-two-bars)), so
+both ops above come first: the `member_register`, which the access gate exempts as the
+device's own first op ([Authority](03-authority.md#the-one-carve-out)), and an `owner`
+grant to itself, because a registration alone does not clear bar 2. The Root just
+recovered signs both — which is also what satisfies rule 3 of
+[Authority §7](03-authority.md#7-roles), since the grant's `granter` is `root`.
+
+> Every joining device writes its registration before it reads anything; that part is
+> ordinary. The grant is what differs. An ordinary joiner waits for an owner to issue
+> one, and a recovering device issues its own — because the credential it has just
+> opened *is* the owner.
+
+**[C]** That grant **MUST** name `owner` and not a lesser role. A lesser one clears
+bar 2 for the read and nothing after it: a `rotate` carries no certificate, so its
+authority is the sender's own live `owner` grant
+([Authority](03-authority.md#rotate)), and `PUT …/keywraps` refuses a non-owner
+uploader `keywrap_requires_owner` before any digest is looked at (§8).
+
+**[C]** The recovered device **MUST NOT** try to mint itself member wraps for the
+epochs it has just opened. Those sets are published and committed, and a set with one
+more wrap in it hashes to something else: the upload is refused as
+`keywrap_digest_mismatch` at any epoch above 0, and as `keywrap_already_written` at
+epoch 0, where the digest is ignored once a record exists (§8).
+
+**It does not need them.** During the ceremony the master wrap key opens every escrow
+wrap minted so far, and what the device keeps afterwards is the **epoch keys
+themselves** — kept for ever, as every device keeps the ones it held (§4). Root and the
+master wrap key are dropped when the ceremony ends (§1) — on a member's device, at any
+rate; what a **custodian** keeps between ceremonies is §7's question. From the next
+rotation on, the device receives member wraps like any other member.
+
+> Worth stating because §1's two routes look like they converge here, and they never
+> do. What is permanent belongs to the **identity**, not to this device: the vault
+> route stays open for ever, but taking it again is another ceremony — another
+> credential, another vault fetch — and the device is left holding epoch keys, not the
+> key that opened them.
+
+Replacing a **lost** device is this flow followed by a revoke and a rotation
+([Authority](03-authority.md#what-revocation-does-not-reach)), which re-keys what comes
+next and rewrites nothing that already exists.
 
 **[S]** **Epochs whose escrow wrap has not been uploaded yet are omitted.**
 
 > That is the window between a rotate landing and its wraps arriving. Serving an empty
 > blob would look like a wrap that fails to open — an alarm — instead of one that has
 > not arrived.
+
+**[S]** Omission and paging compose without interacting: an omitted epoch is absent
+from **every** page, never a short page and never a gap between two, and `has_more`
+counts servable entries only. A page ending at epoch 7, with 8 omitted and 9 servable,
+answers `has_more` true.
+
+> So a client walks the pages by `after_epoch` and never has to distinguish *the page
+> ended* from *an epoch is missing from it*. An omission is not observable as an
+> absence within the ordering to begin with — the epochs served are simply the epochs
+> served — and paging must not turn it into one, which a `has_more` counting
+> unservable entries, or a page kept short by them, would.
 
 | Refusal | Cause |
 |---|---|
