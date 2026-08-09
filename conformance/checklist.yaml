@@ -105,8 +105,10 @@ items:
 - id: CONF-HEALTH-001
   requirement: >
     GET /health returns status, a non-empty version, contract_versions ascending,
-    protocol_namespace, profile, and the four required limits keys.
-  spec: "docs/05-compatibility.md"
+    protocol_namespace, profile, extension_classes, and the four required limits
+    keys. extension_classes is always present — {} where none are enabled, never
+    absent — and its keys are decimal JSON strings with no leading zeros.
+  spec: "docs/05-compatibility.md §7"
   subject: server
   observable: black-box
   codes: []
@@ -127,6 +129,29 @@ items:
   observable: black-box
   codes: [store_unavailable]
   test: tests/conformance/test_health.py::test_health_db_outage
+
+- id: CONF-HEALTH-004
+  requirement: >
+    extension_classes reports exactly what ext_binding accepts: a bind naming a
+    class and NAME the field lists is accepted, one naming a class absent from the
+    field is refused ext_class_not_enabled, and one naming a listed class under any
+    other name is refused ext_name_mismatch carrying that field's value as expected.
+    Where the field is {}, every well-formed bind is refused ext_class_not_enabled.
+  spec: "docs/05-compatibility.md §7"
+  subject: server
+  observable: black-box
+  codes: [ext_class_not_enabled, ext_name_mismatch]
+  test: tests/conformance/test_health.py::test_extension_classes_matches_binding
+
+- id: CONF-HEALTH-005
+  requirement: >
+    Mid-outage a functional route answers 503 store_unavailable carrying no other
+    detail field, while GET /health still answers 200.
+  spec: "docs/05-compatibility.md §7"
+  subject: server
+  observable: black-box
+  codes: [store_unavailable]
+  test: tests/conformance/test_health.py::test_outage_on_functional_route
 
 # ── Wire format ──────────────────────────────────────────────────────────────
 
@@ -180,12 +205,14 @@ items:
 - id: CONF-WIRE-005
   requirement: >
     Op classes 0x03 and 0x04 are refused unsupported_op_class, as is every unassigned,
-    undeclared or unenabled value in all four quadrants; 0x01, 0x02, 0x80, 0x81 are
-    served.
-  spec: "docs/01-the-log.md"
+    undeclared or unenabled value in all four quadrants; 0x01, 0x02, 0x80, 0x81 and
+    0xBF are served. Under a profile enabling no extension class a well-formed
+    ext_binding is therefore refused ext_class_not_enabled for the class it names,
+    never unsupported_op_class for its own 0xBF.
+  spec: "docs/01-the-log.md §3"
   subject: server
   observable: black-box
-  codes: [unsupported_op_class]
+  codes: [unsupported_op_class, ext_class_not_enabled]
   test: tests/conformance/test_wire.py::test_served_op_classes
 
 - id: CONF-WIRE-006
@@ -209,8 +236,11 @@ items:
 - id: CONF-WIRE-008
   requirement: >
     Signature preimages are length-prefixed: framed(domain, rest) = u8 len(domain) ||
-    domain || rest, asserted against frozen vectors for all thirteen domains.
-  spec: "docs/04-keys.md"
+    domain || rest, asserted against frozen vectors for all thirteen fixed core
+    domains. Those thirteen are the whole of the core set: an envelope of any class
+    below 0xC0 frames under <ns>/op/v1, while an extension-class op frames under
+    <ns>/ext/<name>/v1 instead and is vectored per profile by CONF-WIRE-022.
+  spec: "docs/04-keys.md §2"
   subject: server
   observable: white-box
   codes: []
@@ -361,6 +391,18 @@ items:
   codes: [request_too_large]
   test: tests/conformance/test_wire.py::test_body_size_bound
 
+- id: CONF-WIRE-022
+  requirement: >
+    The profile holds one frozen preimage vector per enabled extension NAME, framing
+    that class's envelopes under <ns>/ext/<name>/v1. Enabling any number of extensions
+    leaves the thirteen fixed core vectors byte-identical, and two enabled names never
+    share a domain.
+  spec: "docs/04-keys.md §2"
+  subject: profile
+  observable: white-box
+  codes: []
+  test: tests/conformance/test_domains.py::test_extension_domain_vectors
+
 # ── Credentials ──────────────────────────────────────────────────────────────
 
 - id: CONF-CRED-001
@@ -476,19 +518,22 @@ items:
 
 - id: CONF-AUTHZ-014
   requirement: >
-    An author's first op in a Workspace is exempt from the access gate: a
-    member_register naming the author, and a workspace_genesis, are both accepted from
-    a device holding no registration there.
-  spec: "docs/03-authority.md"
+    The exemption reaches the author's first op and no further: a member_register
+    naming the author, and a workspace_genesis, are both accepted from a device
+    holding no registration there — while the same device posting
+    [content, member_register naming the author] answers 403 no_registration, because
+    the batch's first op is not the one that establishes access.
+  spec: "docs/03-authority.md §3.2"
   subject: server
   observable: black-box
-  codes: []
+  codes: [no_registration]
   test: tests/conformance/test_authz_matrix.py::test_first_op_exempt
 
 - id: CONF-AUTHZ-015
   requirement: >
-    The exemption is not a hole: a member_register whose certificate was not signed by
-    this Workspace's current Root answers 422 bad_root_signature.
+    The exemption is not a hole: a member_register whose certificate was not signed
+    under this Workspace's root authority — its current Root, or a delegation live at
+    that op's position — answers 422 bad_root_signature.
   spec: "docs/03-authority.md"
   subject: server
   observable: black-box
@@ -582,9 +627,10 @@ items:
 - id: CONF-AUTHZ-007
   requirement: >
     Sealed ops at current_epoch=3: epoch 3 accepted, epoch 2 accepted, epoch 1 refused
-    409 key_epoch_stale, epoch 4 refused 409 key_epoch_unknown. In an unkeyed Workspace
-    no epoch is refused.
-  spec: "docs/04-keys.md"
+    409 key_epoch_stale, epoch 4 refused 409 key_epoch_unknown. In an unkeyed
+    Workspace the floor is vacuous and the ceiling bites at 0: a sealed op at
+    key_epoch 0 is accepted, and one above 0 is refused 409 key_epoch_unknown.
+  spec: "docs/04-keys.md §4"
   subject: server
   observable: black-box
   codes: [key_epoch_stale, key_epoch_unknown]
@@ -654,17 +700,19 @@ items:
 - id: CONF-MEM-003
   requirement: >
     member_id_already_registered fires for a different control_pk, a different
-    content_pk, a conflicting kex_pk, and a supplied kex_pk where none is stored;
-    omitting kex_pk when one is stored answers 200.
-  spec: "docs/02-identity.md"
+    content_pk, or a conflicting kex_pk. Omitting any of the three keys is a shape
+    refusal and never a conflict — malformed_sign_pk for control_pk or content_pk,
+    malformed_kex_pk for kex_pk — since all three are required on every registration.
+    An identical repeat answers 200 with the stored record.
+  spec: "docs/02-identity.md §4"
   subject: server
   observable: black-box
-  codes: [member_id_already_registered]
+  codes: [member_id_already_registered, malformed_sign_pk, malformed_kex_pk]
   test: tests/conformance/test_members.py::test_conflict_cases
 
 - id: CONF-MEM-004
   requirement: >
-    GET /v1/w/{w}/members lists exactly the Members whose Root-signed registration
+    GET /v1/w/{w}/members lists exactly the Members whose root-authority-signed registration
     named that Workspace, ordered by raw member_id ascending, with no chained field,
     and each entry carries the registration's member_kind as stored.
   spec: "docs/02-identity.md"
@@ -728,6 +776,20 @@ items:
   codes: [malformed_request, unknown_request_field]
   test: tests/conformance/test_members.py::test_member_query_validation
 
+- id: CONF-MEM-010
+  requirement: >
+    key_ids is an object of exactly control_key_id, content_key_id and kex_key_id,
+    optional as a whole and never member by member: omitted entirely it is accepted,
+    an unrecognised member answers 422 unknown_request_field with the path
+    key_ids.<name>, and a missing member answers 422 malformed_request naming the path
+    left out. When sent and accepted it round-trips unchanged in the response and in
+    GET /v1/w/{w}/members.
+  spec: "docs/02-identity.md §4"
+  subject: server
+  observable: black-box
+  codes: [unknown_request_field, malformed_request]
+  test: tests/conformance/test_members.py::test_key_ids_shape
+
 # ── Op log ───────────────────────────────────────────────────────────────────
 
 - id: CONF-LOG-001
@@ -740,8 +802,10 @@ items:
 
 - id: CONF-LOG-002
   requirement: >
-    A batch of [genesis, member_register, grant, content] from a member holding no
-    Grant commits whole.
+    A batch of [genesis, Root-signed grant, content] from a member holding no Grant
+    commits whole: the genesis registers the founder, the grant is accepted under the
+    root-authority bypass, and the content op is authorised by the grant that landed
+    earlier in the same batch.
   spec: "docs/01-the-log.md"
   subject: server
   observable: black-box
@@ -919,6 +983,19 @@ items:
   codes: [invalid_body_length, payload_overruns_body, non_zero_padding]
   test: tests/conformance/test_control.py::test_control_framing
 
+- id: CONF-CTL-016
+  requirement: >
+    payload_len is read big-endian: a body whose four length bytes spell the payload
+    length little-endian is refused under the framing codes, never unpacked at the
+    byte-swapped value — payload_overruns_body where the big-endian reading exceeds
+    the body, non_zero_padding where it falls short and payload bytes sit in the
+    padding.
+  spec: "docs/01-the-log.md §2"
+  subject: server
+  observable: black-box
+  codes: [payload_overruns_body, non_zero_padding]
+  test: tests/conformance/test_control.py::test_payload_len_is_big_endian
+
 - id: CONF-CTL-002
   requirement: >
     A control payload that is not well-formed, or carries an unserved type, is refused
@@ -970,6 +1047,20 @@ items:
   observable: black-box
   codes: [member_register_not_first]
   test: tests/conformance/test_control.py::test_register_must_be_first
+
+- id: CONF-CTL-017
+  requirement: >
+    member_register refusals fire in this order, each shown to precede the next by an
+    op faulty in both ways: workspace_not_created, member_register_not_first,
+    bad_root_signature — verified under root authority at the op's own position, so a
+    live delegate's signature passes — cert_workspace_mismatch, cert_member_mismatch
+    where the certificate names a device other than the envelope's author,
+    cert_key_mismatch, unknown_member_kind.
+  spec: "docs/03-authority.md §10"
+  subject: server
+  observable: black-box
+  codes: [workspace_not_created, member_register_not_first, bad_root_signature, cert_workspace_mismatch, cert_member_mismatch, cert_key_mismatch, unknown_member_kind]
+  test: tests/conformance/test_control.py::test_member_register_ordering
 
 - id: CONF-CTL-007
   requirement: >
@@ -1599,9 +1690,9 @@ items:
 
 - id: CONF-DISC-005
   requirement: >
-    No documented race yields a 500; the only 5xx in the suite is
-    GET /health/db's 503.
-  spec: "docs/README.md"
+    No documented race yields a 500; the only 5xx in the suite is 503
+    store_unavailable, which any route may answer while the backing store is down.
+  spec: "docs/README.md, docs/05-compatibility.md §7"
   subject: server
   observable: black-box
   codes: [store_unavailable]
@@ -1642,10 +1733,10 @@ items:
 - id: CONF-HARD-003
   requirement: >
     A hard_prune naming a 0x81 op is refused hard_prune_target_is_prune even though
-    that target is necessarily not marked reprised — rule 2 runs before rule 3, which
+    that target is necessarily not marked reprised — rule 3 runs before rule 4, which
     is the only reason the code is reachable — so the hashes that let a verifier chain
     past an existing hole always survive.
-  spec: "docs/01-the-log.md"
+  spec: "docs/01-the-log.md §7"
   subject: server
   observable: black-box
   codes: [hard_prune_target_is_prune]
@@ -1690,12 +1781,15 @@ items:
 - id: CONF-HARD-006
   requirement: >
     A role entry naming 0x81 without payload types authors prune and is refused
-    role_forbids_prune_type on hard_prune; an entry naming hard_prune explicitly
-    authors both.
-  spec: "docs/03-authority.md"
+    role_forbids_prune_type on hard_prune, carrying prune_type and the live roles
+    sorted lexicographically; an entry naming hard_prune explicitly authors both. The
+    verdict lands after the shape rules, not before them: a hard_prune with empty
+    targets from that same bare-0x81 role answers prune_targets_empty, never
+    role_forbids_prune_type.
+  spec: "docs/01-the-log.md §7, docs/03-authority.md §9"
   subject: server
   observable: black-box
-  codes: [role_forbids_prune_type]
+  codes: [role_forbids_prune_type, prune_targets_empty]
   test: tests/conformance/test_prune.py::test_hard_prune_needs_explicit_grant
 
 - id: CONF-HARD-007
@@ -1902,9 +1996,13 @@ items:
 
 - id: CONF-CLI-006
   requirement: >
-    A client refuses an opaque op (bit 7 clear) at suite 0x00 whose epoch it holds a
-    key for, and raises aead_failure for a body that does not authenticate.
-  spec: "docs/04-keys.md"
+    The downgrade test is positional. A client refuses an opaque op (bit 7 clear) at
+    suite 0x00 plaintext_at_encrypted_epoch when it sits at a log position after the
+    Workspace's first rotate, and at any position where the Workspace's epoch 0 is
+    keyed — while accepting the same op at a position before the first rotate in a
+    Workspace that shipped plaintext and encrypted later. It raises aead_failure for a
+    body that does not authenticate.
+  spec: "docs/04-keys.md §3"
   subject: client
   observable: white-box
   codes: [plaintext_at_encrypted_epoch, aead_failure]
@@ -2061,9 +2159,10 @@ items:
 - id: CONF-ADM-003
   requirement: >
     A joining device registers with no admission credential: a member_register
-    certificate for an existing Workspace, signed by that Workspace's current Root,
-    is accepted with the gate closed.
-  spec: "docs/02-identity.md"
+    certificate for an existing Workspace, signed under that Workspace's root
+    authority — its current Root, or a delegation live as the route evaluates the
+    request — is accepted with the gate closed.
+  spec: "docs/02-identity.md §4"
   subject: server
   observable: black-box
   codes: []
@@ -2074,7 +2173,10 @@ items:
     The joining branch is checked, not assumed: a member_register certificate for a
     Workspace that does not exist answers 409 workspace_not_created, and one signed by
     a Root that is not that Workspace's current Root answers 422 cert_root_pk_mismatch.
-  spec: "docs/02-identity.md"
+    A delegate-signed certificate whose root_pk_b64 is not the current Root answers
+    cert_root_pk_mismatch too — the signature verified under a live delegation, so it
+    is never bad_root_signature.
+  spec: "docs/02-identity.md §4"
   subject: server
   observable: black-box
   codes: [workspace_not_created, cert_root_pk_mismatch]
@@ -2148,7 +2250,9 @@ items:
   requirement: >
     A member_register, grant or revoke certificate signed by a live delegate is
     accepted exactly as a Root-signed one, including an owner grant and its revoke.
-  spec: "docs/03-authority.md"
+    The route agrees with the log: a delegate-signed member_register presented at
+    POST /v1/members with root_pk_b64 set to that Workspace's current Root answers 201.
+  spec: "docs/03-authority.md §6, docs/02-identity.md §4"
   subject: server
   observable: black-box
   codes: []
@@ -2207,6 +2311,32 @@ items:
   observable: black-box
   codes: []
   test: tests/conformance/test_delegation.py::test_delegate_key_disjointness_is_positional
+
+- id: CONF-DELG-008
+  requirement: >
+    A device enrols end to end under a delegation alone, Root never signing: the
+    delegate-signed member_register certificate answers 201 at POST /v1/members with
+    chained false, the challenge and token routes then issue a device token, the same
+    certificate posted as that device's first op is accepted while it holds zero
+    grants, and the device is chained thereafter.
+  spec: "docs/03-authority.md §6, docs/02-identity.md §4"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_delegation.py::test_delegate_enrolment_end_to_end
+
+- id: CONF-DELG-009
+  requirement: >
+    The route's verdict is a snapshot and the log's is positional. A certificate the
+    route accepted while the delegation was live is refused 422 bad_root_signature
+    when it lands as an op after a revoke_delegation; the shell persists, and a
+    freshly issued certificate for the same keys answers 200 at the route and is
+    accepted as that device's first op.
+  spec: "docs/02-identity.md §4, docs/03-authority.md §6"
+  subject: server
+  observable: black-box
+  codes: [bad_root_signature]
+  test: tests/conformance/test_delegation.py::test_snapshot_versus_positional
 
 # ── Device key split ─────────────────────────────────────────────────────────
 
