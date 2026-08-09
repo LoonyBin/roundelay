@@ -97,6 +97,18 @@ would answer is never asked.
 - **stored irreversibly** — a server MUST NOT be able to reconstruct a live refresh
   token from its own storage.
 
+**[S]** **Two** events revoke them, and both are facts in the log: a device **losing
+its last live grant** in a Workspace, and a `member_amend` of that device's **control**
+key ([Authority §11](03-authority.md#11-what-a-control-op-causes)). Each kills every
+refresh token scoped to that device, and closes every live signal socket it holds in
+the Workspace where the op landed with `4403`
+([The Log](01-the-log.md#10-being-told-there-is-news-ws-v1wworkspace_idsignal)).
+
+> The second is the first's cascade minus the grant half, and it is there for the same
+> reason the first is: the challenge below is signed by the control key, so a token the
+> retired key already obtained would outlive the retirement — and outlive it
+> everywhere, because a token is scoped to a device rather than to a Workspace.
+
 **[S]** A credential failure is `401 invalid_credential`, carrying
 `WWW-Authenticate: Bearer`.
 
@@ -543,6 +555,10 @@ key is never replaced in place.
 > the caller already controls. Two identities that pick the same UUID collide, and
 > the second one is told so rather than silently taking over the first one's record.
 
+This route registers a device's keys and never changes them. A change is a
+`member_amend` op, in the log of the Workspace it applies to ([Authority
+§10](03-authority.md#member_amend)).
+
 **[S]** A request repeating this `member_id` and these keys under a **different** valid
 certificate — a `member_register` for a second Workspace, say — is not a refusal: it
 answers `200` with the stored record. The certificate faces every check above and is
@@ -595,6 +611,21 @@ and covers the member id **and** the nonce, under a dedicated signing domain —
                             so a captured signature cannot be replayed into
                             another device's pending challenge
 ```
+
+**[S]** *Which* control key is the one **in force in any Workspace this device is
+registered in** — the registration's, in every Workspace where no `member_amend` has
+landed against it, and the amendment's where one has
+([Authority](03-authority.md#member_amend)). A key amended away in **every** one of
+them stops obtaining tokens.
+
+> This route has no Workspace in its path and no position to be judged at, so it asks
+> the only question it can — the same shape as `POST /v1/members` above, and answered
+> from materialised state for the same reason.
+
+**[C]** Which prices the remedy honestly: a device rotating its control key **because
+that key was exposed** MUST amend in **every** Workspace it is registered in. Until it
+has, the retired key still buys a token somewhere — and that token speaks for the
+device everywhere, not only where the amend is missing.
 
 **[S]** **The challenge is spent by the attempt, win or lose** — and spent *before*
 either field is decoded.
