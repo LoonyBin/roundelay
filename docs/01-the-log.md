@@ -35,7 +35,8 @@ signature.
 
 ```
  ┌──────────────────────── 158 bytes ────────────────────────┐
- │ HEADER — always in the clear, always this shape           │
+ │ HEADER — always in the clear, and this shape under every  │
+ │          v1 suite                                         │
  ├─────┬─────┬──────────────┬────────┬──────────────┬────────┤
  │class│suite│ workspace_id │key_epoch│    op_id     │ author │ …
  │ 1B  │ 1B  │     16B      │   4B    │     16B      │  16B   │
@@ -44,9 +45,9 @@ signature.
  │ BODY — opaque when the class has bit 7 clear        │
  │        readable when it is set                      │
  └─────────────────────────────────────────────────────┘
- ┌────────── 64 bytes ──────────┐
- │ SIGNATURE (Ed25519)          │
- └──────────────────────────────┘
+ ┌─────────────── 64 bytes ────────────────┐
+ │ SIGNATURE (Ed25519, 64 B — the suite's) │
+ └─────────────────────────────────────────┘
 ```
 
 **[W]** The full header, in canonical order. Fixed widths, big-endian integers:
@@ -54,7 +55,7 @@ signature.
 | Offset | Size | Field | What it is |
 |---:|---:|---|---|
 | 0 | 1 | `op_class` | the class byte — §3 |
-| 1 | 1 | `suite` | the sealing construction: `0x00` none, `0x01` sealed. **Which values are legal depends on the class** → §3, [Keys](04-keys.md) |
+| 1 | 1 | `suite` | the envelope construction: `0x00` none, `0x01` sealed. **Which values are legal depends on the class** → §3, [Keys](04-keys.md) |
 | 2 | 16 | `workspace_id` | which log this belongs to |
 | 18 | 4 | `key_epoch` | which key generation sealed it |
 | 22 | 16 | `op_id` | the author's own id for this op |
@@ -65,12 +66,12 @@ signature.
 | 102 | 32 | `observed_head` | reserved; all-zero in v1 |
 | 134 | 24 | `nonce` | encryption nonce; all-zero when unsealed |
 
-The header is constant width, so no length prefixes are needed anywhere: the
-envelope's own length gives the body's.
+The header is constant width and the signature's length is the suite's, so no length
+prefixes are needed anywhere: the envelope's own length gives the body's.
 
 ```
   body length = total length − 158 (header) − 64 (signature)
-              = total length − 222
+              = total length − 222        ← the v1 geometry: suites 0x00 and 0x01
 ```
 
 **[W]** An **unsealed** op — suite `0x00` — carries `key_epoch` 0. The field names the
@@ -93,7 +94,11 @@ and never judges it (§8).
 > Reserved means reserved on both sides. A field the server ignores and readers accept
 > is one a future version can no longer give a meaning to — something is already in it
 > somewhere, and two readers converge on different state. Refusing now is what keeps
-> the field spendable later.
+> the field spendable later. And **spendable never means writable in place**: these 32
+> bytes can only be given a meaning alongside a new suite or class that v1 readers
+> already refuse wholesale — never by new writers filling them in under a v1
+> construction, which every conforming reader is obliged to reject envelope by
+> envelope.
 
 **[W]** The signature covers `header || body` and is made with the author's
 signing key. Its exact construction is in [Keys](04-keys.md); what matters here is
@@ -286,7 +291,7 @@ server-read classes here for behaviour the core did not anticipate.
 | 2 | **[W]** Ops of the class are signed under the domain `<namespace>/ext/<name>/v1`. |
 | 3 | **[S]** A member declares its understanding of the class by writing an **`ext_binding`** op (`0xBF`) **carrying the NAME**, and it is judged positionally, exactly like a grant. |
 | 4 | **[S]** An `ext_binding` whose NAME is not byte-identical to what this server implements for that class is refused `ext_name_mismatch`, carrying `index`, `op_class` and the `expected` name. **A class is never bound under a name the server does not agree with.** |
-| 5 | **[S]** An extension MUST NOT alter the visibility, ordering or interpretation of any op outside `0xC0–0xFF`, **except** that it MAY hide ops — and any op it hides MUST carry the same attestation a prune carries: author, author sequence and envelope hash. |
+| 5 | **[S]** An extension MUST NOT alter the visibility, ordering or interpretation of any op outside `0xC0–0xFF`, **except** that it MAY hide ops — and any op it hides MUST carry the same attestation a prune carries: author, author sequence and envelope hash. §7's [`prune_ext`](#prune_ext-folding-an-extension-class) is the core's own instrument for writing exactly that. |
 
 > **Rules 2 and 4 cover different failures, and the second is the one that bites.**
 > The signing domain protects *readers*: a client built against `audit-marker`
@@ -308,6 +313,23 @@ server-read classes here for behaviour the core did not anticipate.
 > producing no attestation is not detected — a device enrolling two years later
 > sees a hole it has nothing to check against, and accepts it. Destructive is fine
 > here. Unverifiable is not.
+
+**[S]** Ops of an extension class are **foldable**, by exactly one instrument: the
+[`prune_ext`](#prune_ext-folding-an-extension-class) payload of §7, which names the
+class **and the NAME its targets were written under** and marks them reprised.
+Nothing else reaches them — an ordinary `prune` naming one is refused
+`prune_target_is_server_read`, as it always was.
+
+**[S]** `0xBF` is **not** foldable, by any type, ever. An `ext_binding` is the record
+of what a class meant over a span of positions, and §7's name check reads that record
+to decide whether a fold may proceed at all.
+
+> Which closes the gap rule 5 opens. An extension may hide ops and owes an
+> attestation when it does; until `prune_ext` the core offered no way to write that
+> attestation into the log, so an implementation removing its own ops had to invent
+> one — and an attestation nobody else parses is not much of one. Rule 5's *the same
+> attestation a prune carries* is now literal: the same four fields, the same `0x81`
+> class, the same cross-check at the door, the same permanence.
 
 **[S]** A server MUST advertise the extension classes it implements in its served
 sets — the `extension_classes` field of `GET /health`
@@ -408,7 +430,8 @@ whole. Stages 2–4 already run per op in arrival order.
 **[S]** A binding ends at the position of the `unbind` that closes it. Ops of that
 class between start and end are valid for ever; ops after it are refused. **Ending
 a binding is not a rollback** — whatever the extension already did stays done, just
-as revoking a grant does not unwrite what that device authored.
+as revoking a grant does not unwrite what that device authored. Neither is a fold: a
+`prune_ext` hides what the class wrote and never undoes what it did (§7).
 
 #### The `ext_binding` payload
 
@@ -645,7 +668,7 @@ marks which layer owns each stage:
    │  EVERY op, header only, no body read:                   │
    │  decodes? long enough? served suite and class?          │
    │  right Workspace? authored by this token's device?      │
-   │  the right one of its two registered key ids?           │
+   │  a key id it has held for this class?                   │
    └────────────────────────┬────────────────────────────────┘
                             ▼
    ┌── STAGE 2 ─────────────────────────── Authority and 4 ───┐
@@ -709,14 +732,25 @@ proceeds.
 | `413 batch_too_large` | more ops than the advertised ceiling |
 | `422 malformed_base64` | not base64 |
 | `422 truncated_envelope` | under 158 bytes — no header |
-| `422 envelope_too_short` | header present, but no legal body could fit |
 | `422 unsupported_op_class` | unknown, reserved, undeclared or unenabled class |
 | `422 unsupported_suite` | a suite byte this server does not serve |
+| `422 envelope_too_short` | header present, but no legal body could fit |
 | `422 encrypted_control_op` | a `0x80` op that is sealed → [Keys](04-keys.md) |
 | `422 encrypted_prune_op` | a `0x81` op that is sealed → [Keys](04-keys.md) |
 | `422 workspace_mismatch` | header names a different Workspace than the URL |
 | `403 author_member_mismatch` | header names a different device than the token |
-| `422 author_key_class_mismatch` | `author_key_id` is the wrong one of that device's two signing keys for this class → [Authority](03-authority.md); also carries `op_class` |
+| `422 author_key_class_mismatch` | `author_key_id` is an id this device has held for the **other** signing class → [Authority](03-authority.md); also carries `op_class` |
+
+**[S]** **The two selector bytes resolve before the floor.** `unsupported_op_class` and
+`unsupported_suite` are decided ahead of `envelope_too_short`, because **the floor is
+the suite's** — it is derived from the geometry the suite names
+([Keys](04-keys.md#3-suites-sealing-a-body)), so a suite this server does not serve has
+no floor to measure against. `truncated_envelope` still leads all three: under 158 bytes,
+no envelope of any suite this server serves exists — v1 serves only the v1 geometry,
+and a geometry with a different preamble arrives only with a suite value whose own
+rules replace this arithmetic. The order is
+behaviourally identical for v1's two suites, which share one geometry, and it is
+protocol the moment a third exists.
 
 **[S]** `unsupported_suite` is only ever *this byte means nothing here*. A **served**
 suite on a class that forbids it is the `encrypted_*` family instead — the two rows
@@ -733,11 +767,14 @@ rather than about anything in the batch.
 > `author_member_mismatch` is one comparison and no cryptography — a token speaks
 > for exactly one device, and that device is the only author it can post as.
 > `author_key_class_mismatch` is the third of the same shape and no more expensive:
-> one byte of the header against two ids the server already holds for that device.
+> one byte of the header against ids the server already holds for that device.
 
-**[S]** `author_key_class_mismatch` fires only on a positive match against the
-**wrong** one of those two ids. An `author_key_id` the server holds no record of is
-**not** refused here — that is the rotation §8 declines to judge.
+**[S]** `author_key_class_mismatch` fires only on a positive match against an id this
+device has held for the **other** class — every id it has held for each class in this
+Workspace, never only the pair its registration named, so a `member_amend`
+([Authority](03-authority.md#member_amend)) never turns an honest stale client into a
+class mismatch. An `author_key_id` the server holds no record of is **not** refused
+here — that is the rotation §8 declines to judge.
 
 **[S]** An empty `ops` array returns `{"results": []}` and changes nothing.
 
@@ -782,7 +819,7 @@ not run for it.
 > opposite sides of the lookup. A stored op whose `key_epoch` has since dropped below the
 > floor answers `duplicate: true`, never `key_epoch_stale`: it was judged at its own
 > position and nothing that changed afterwards re-judges it — the same argument as
-> [Authority](03-authority.md)'s four exemptions, one layer down. Any other placement
+> [Authority](03-authority.md)'s five exemptions, one layer down. Any other placement
 > would also owe an account of what stage 5 does with a repeat, whose `author_seq` is by
 > definition not the next one.
 >
@@ -862,11 +899,24 @@ lead there, and the core distinguishes neither:
 
 **[S]** A prune **deletes nothing.** The named op is marked; the default read hides
 it; `include_reprised=true` serves it back. Destroying the bytes is a **second,
-separate op** — `hard_prune`, below — which can only ever target an op a prune has
-already marked.
+separate op** — `hard_prune`, below — which can only ever target an op some marking
+type has already marked.
 
 > Two steps because the reverse order is impossible. A soft mark is recoverable, a
 > destroyed byte is not, so the recoverable step goes first and always lands first.
+
+**[W]** Three `0x81` payload types in v1, and the mandatory `type` says which:
+
+| Type | Says | Reaches | Reversible |
+|---|---|---|---|
+| `prune` | these ops are reprised by that one | opaque classes — `0x00–0x7F` | yes; the mark is a filter |
+| `prune_ext` | these ops of this extension class, written under this NAME, are folded | the one extension class it names | yes; the same mark |
+| `hard_prune` | the bytes of these already-marked ops may go | anything either mark reached | **no** |
+
+**[S]** `0x80` control, `0x81` itself and `0xBF` `ext_binding` are targets of **none
+of the three**, ever. They are the record of who may write, the record of what was
+removed, and the record of what a class meant — and a fold that could reach any of
+them would be folding away the account of its own legitimacy.
 
 ### The prune payload
 
@@ -882,12 +932,14 @@ already marked.
 ```
 
 **[W]** `type` is **mandatory in every `0x81` payload, for ever**, and an unknown
-value is refused `unsupported_prune_type`. Two types in v1: `prune` and `hard_prune`.
+value is refused `unsupported_prune_type`. Three types in v1, per the table above.
 
 > Same rule as `0x80`, for a related reason. A payload that has to be *inferred* from
 > which fields are present is one that two implementations will infer differently the
-> first time a field becomes optional — and here the two types differ by whether bytes
-> survive.
+> first time a field becomes optional — and here the types differ by whether bytes
+> survive, and by which side of bit 7 they reach. `prune_ext` is the case that
+> vindicates the rule: it differs from a `prune` only in which fields sit beside
+> `targets`, and inference would have turned a dropped field into a change of lane.
 
 Why a target is more than a position: a reprise removes ops from the *middle* of
 each contributing author's chain, not from the front.
@@ -1036,11 +1088,11 @@ absent from the page, and the `hard_prune` that removed it is in the log.
 
 #### Why prune ops may never be targets
 
-**[W]** Rule 3 is not tidiness. A soft prune carries `envelope_hash` for every op it
-marks, and that hash is *the only thing* that lets a verifier chain past the hole it
-created, above. Destroy the prune and every hole it authorised becomes unexplainable:
-a reader meets a gap in an author's chain with nothing to bridge it and no signed
-statement that the removal was legitimate.
+**[W]** Rule 3 is not tidiness. Every marking type — `prune` and `prune_ext` alike —
+carries `envelope_hash` for every op it marks, and that hash is *the only thing* that
+lets a verifier chain past the hole it created, above. Destroy the prune and every
+hole it authorised becomes unexplainable: a reader meets a gap in an author's chain
+with nothing to bridge it and no signed statement that the removal was legitimate.
 
 > So the evidence outlives the evidence's subject, deliberately. Prune ops accumulate
 > for ever and that is the price of the archive being *checkable* rather than merely
@@ -1065,15 +1117,240 @@ all without the server becoming an actor.
 > permanent archive grants `hard_prune` to no role, and the archive is permanent by
 > construction rather than by promise.
 
+### `prune_ext`: folding an extension class
+
+An extension class writes ops the server acts on, and a `prune` cannot touch one:
+`prune_target_is_server_read` refuses every class with bit 7 set. The other exempt
+classes earn the exemption — control is the permission record, prune is the evidence
+of removal, `ext_binding` is the record of meaning — and an extension's own ops are
+none of those. They were exempt because the general rule is stated on **bit 7**, and
+they happen to sit on the wrong side of that bit. Everything written through the
+escape hatch was therefore permanent, which no rule ever intended and no deployment
+can undo.
+
+**[W]** So a third type, naming the class **and the NAME it was written under**:
+
+```json
+{"type": "prune_ext",
+ "op_class": 204,
+ "name": "purge",
+ "targets": [{"seq": 2,
+              "author_member_id": "<uuid>",
+              "author_seq": 7,
+              "envelope_hash": "<hex64>"}]}
+```
+
+**[W]** `op_class` is an **integer** in `192 … 255`, and `name` is the same token an
+`ext_binding` carries — `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`, 1–32 bytes. Both are
+mandatory; a missing one, one outside its range, and any unrecognised key — a
+`reprise` among them — is `malformed_prune_payload` (§3 for why the class is an
+integer and not a hex string).
+
+**[W]** The targets are the four-field targets of a `prune`, unchanged, and the three
+shape rules bind identically: at least one (`prune_targets_empty`), no duplicate by
+`seq` **and** none by `(author, author_seq)` (`prune_duplicate_target`), at most 1000
+(`prune_targets_too_many`). Each `envelope_hash` is the envelope hash of §2 and is
+cross-checked the same way, against the stored bytes or against the hash a tombstone
+retains.
+
+**[W]** **One class and one name per op.** Targets spread over two extension classes
+need two `prune_ext` ops, and so does residue written under two successive names for
+one class.
+
+> Because the name is the statement. A payload carrying a list of `(class, name)`
+> pairs would let one signature attest under several meanings at once, and the whole
+> reason for carrying a name is that its author committed to exactly one.
+
+**[W]** **There is no `reprise` field**, and no `0x02` op stands behind a `prune_ext`.
+
+> A reprise restates what the ops it replaces said, and only the application knows
+> that. An extension's payloads are the implementation's — the core has never defined
+> one, cannot say what a fold of them would contain, and would be demanding that the
+> fold be written in a class the extension does not own. What is genuinely owed is the
+> **attestation**, which rule 5 of §3 already requires of any extension that hides ops:
+> author, author sequence and envelope hash, per target, so that every reader can chain
+> past every hole. `prune_ext` is that requirement, in the log, under a signature the
+> author cannot later disown.
+
+#### What may be a target
+
+**[S]** The bit-7 exemption holds, with exactly one hole in it — **the class the
+payload names**. Per target, in payload order, all `422` with `index`:
+
+| # | Refusal | Cause |
+|---|---|---|
+| 1 | `prune_target_not_found` | no op was ever stored there |
+| 2 | `prune_target_is_control` | control ops are the permission record |
+| 3 | `prune_target_is_prune` | a prune is itself the evidence of removal |
+| 4 | `prune_target_is_server_read` | `0xBF`, and every other core-assigned server-read class |
+| 5 | `prune_ext_wrong_class` | the target's class is not this payload's `op_class`; carries `seq` |
+| 6 | `prune_target_attestation_mismatch` | author, sequence or hash disagrees with what is stored |
+| 7 | `prune_ext_name_mismatch` | the NAME in force for this target's author at this position is not this payload's; carries `seq` and `expected` |
+| 8 | `prune_target_already_reprised` | already reprised |
+
+**[S]** Rule 5 catches everything the four above it did not, in both directions:
+**another extension class** than the one named, and an **opaque** class. A `prune_ext`
+reaches the one class it names and nothing else; `0x01`, `0x02` and profile-declared
+classes are an ordinary `prune`'s business, and `0xCD` is another `prune_ext`'s.
+
+**[S]** `prune_target_is_its_own_reprise` cannot arise here. There is no reprise for a
+target to be.
+
+> Two seams in that order are not free.
+>
+> **The three exemptions precede the class check.** It is the argument rule 3 of the
+> `hard_prune` table already makes: *this is the record, not a record* deserves a
+> verdict of its own, and folding it into *wrong class* would let a client meet the one
+> rule that protects the archive's own evidence and read it as a typo.
+>
+> **And the attestation precedes the name check.** Rule 7 reads state belonging to the
+> op **actually stored** at that position — its author's bindings, not the author the
+> payload claims — so it is only worth asking once the author has proved which op they
+> mean. Ask it first and a mistyped `author_member_id` answers `prune_ext_name_mismatch`
+> about a member the payload never named, under a name it never got wrong.
+
+#### The name check
+
+**[S]** Rule 7 in full. For each target the server resolves **that target's author's**
+binding interval for `op_class` whose span contains **that target's position**, and
+compares the NAME the interval recorded against the payload's `name`, **byte for
+byte**. A disagreement is `422 prune_ext_name_mismatch`, carrying `index`, `seq` and
+`expected` — the NAME that was in force there, not the one the server implements now.
+
+```
+   1  ext_binding  0xCC   bind "purge"
+   2  0xCC op                                     written under "purge"
+   3  ext_binding  0xCC   unbind
+   4  ext_binding  0xCC   bind "copy"
+   5  0xCC op                                     written under "copy"
+
+   prune_ext {op_class: 204, name: "purge", targets: [2]}    ✓
+   prune_ext {op_class: 204, name: "copy",  targets: [2]}    ✗  expected = "purge"
+   prune_ext {op_class: 204, name: "purge", targets: [2, 5]} ✗  at seq 5, expected = "copy"
+```
+
+**Meaning is positional, so removal is too.** An op is folded under the meaning it was
+written with or not at all — the same rule §3 states for how an op is *read*, applied
+to how it is taken away.
+
+**[S]** The store consulted is the one already there: the per-member binding intervals
+of [retained state](reference/retained-state.md) — `(Workspace, member, class)`, the
+bound NAME, start and end positions, several intervals per key. **The same rows the
+write path reads** to decide `ext_class_not_active` and `ext_name_mismatch` on the op
+being written. Nothing new is retained and nothing new is derived.
+
+**[S]** **No live interval is not a case, and has no code.** An op of an extension
+class cannot exist at a position outside one of its author's intervals —
+`ext_class_not_active` refused it at the door (§3), ops are immutable, and positions
+never move. Every target that survived rules 1 to 6 therefore sits inside exactly one
+interval. A server that finds none has lost the binding record, which is a `500` and
+not a refusal.
+
+> That holds because `0xBF` is exempt at rule 4. The intervals *are* `ext_binding` ops:
+> no type may fold one, so no `hard_prune` can ever reach their bytes, and the answer to
+> *under what meaning was this written* survives exactly as long as the hole it is
+> asked about. The exemption that looked like tidiness is what makes this check
+> answerable for ever.
+
+**[S]** The comparison is against **the log, never the configuration.** What the server
+implements for that class *now* does not enter it, and a `prune_ext` naming a class the
+deployment has since reconfigured or disabled is not refused on that ground: `op_class`
+is judged for range only.
+
+> Which is the case the type has to serve. An operator reconfigures `0xCC`, or stops
+> implementing it; every member's binding is invalidated and nobody can bind it again
+> ([§3](#binding-a-class-ext_binding)). The ops written under the old meaning are still
+> there. If folding them required the class to be live, the residue of a **retired**
+> class would be the one thing in this log that could never be removed — which is
+> precisely the position `prune_ext` exists to end.
+
+#### Who may write one
+
+**[S]** Any member whose role entry names the type — role rule 5 of
+[Authority](03-authority.md#rule-5-the-one-destructive-lane). An entry naming bare
+`0x81` confers `prune` and refuses this one `403 role_forbids_prune_type`, carrying
+`prune_type` and the live roles.
+
+**[S]** **The author needs no binding of its own for the class it names**, and the
+absence of one is never checked. It needs no binding it ever held, and none it could
+still obtain.
+
+> An `ext_binding` is a member saying *this is what the class means to me*, so that the
+> server never acts on that member's op under a meaning the member did not agree to
+> (§3). A `prune_ext` asks for no extension behaviour whatever: it marks rows. Its
+> author is not speaking the class, it is folding history written in it — and the
+> meaning it has to get right is checked already, per target, against the log.
+>
+> Requiring a binding would also fail in exactly the case the type exists for. Once the
+> last member has unbound the class and the deployment has stopped implementing it, a
+> fresh `bind` is refused `ext_class_not_enabled` — so a binding requirement would make
+> the residue unfoldable at the moment somebody finally needs to fold it. It would break
+> the arrangement this section already relies on elsewhere, too: prune targets may be
+> **anyone's** ops, so one member holding the folding role does this for the whole
+> Workspace, and that member is precisely the one that never spoke the class.
+>
+> What stands in the binding's place is not nothing. The write-path check protects **the
+> op being written**; the name check protects **the ops being removed**. Two different
+> questions, and only the second is a fold's business.
+
+**[C]** A client MUST take the `name` from **the log** — the target's author's interval
+at the target's position — and MUST NOT take it from its own binding, or from
+`extension_classes` on `GET /health`. Either can differ from what was in force there,
+and the second says nothing about the past at all.
+
+#### What the mark means, and what may follow
+
+**[S]** An accepted `prune_ext` marks each target **reprised**, in the one sense that
+state has: hidden from the default read, served byte-identical under
+`include_reprised=true`, and recorded with the position of the op that marked it.
+Nothing distinguishes a mark a `prune_ext` set from one a `prune` set, and nothing
+needs to.
+
+**[S]** So a marked extension op is a legitimate `hard_prune` target, and the five-rule
+table composes with no word of it changed:
+
+| # | Rule | On an extension-class target |
+|---|---|---|
+| 1 | the shape rules | unchanged |
+| 2 | the position exists | unchanged |
+| 3 | the target is not itself a `0x81` op | **excludes `0x81` targets, not extension ones** — an extension class is not `0x81` |
+| 4 | the target is already marked reprised | **now reachable**: a landed `prune_ext` is what puts it there |
+| 5 | `envelope_hash` matches the bytes, or the tombstone's hash | unchanged |
+
+**[S]** A `hard_prune` carries **no `op_class` and no `name`**, and gains neither. It
+names an op rule 4 requires to be marked already, and that mark is the receipt for a
+`prune_ext` whose class and NAME were checked when it landed. Asking a second time
+would only create the possibility of a second answer.
+
+> Rule 4 was a blanket exclusion for these ops until now, and it stops being one
+> without being loosened by a syllable. `0x80` and `0xBF` remain unreachable through it
+> for the reason they always were: no type marks them, so they are never already
+> reprised, and rule 4 answers `hard_prune_target_not_reprised` for ever.
+
+**[S]** A `prune_ext` op is itself an `0x81` op, so it is the target of nothing —
+`prune_target_is_prune` at rule 3 above, `hard_prune_target_is_prune` at rule 3 of the
+five. **The evidence outlives its subject here exactly as it does for a soft prune**,
+and for the identical reason: its per-target `envelope_hash` is the only thing that
+lets a verifier chain past the hole it made.
+
+> This is what makes the exit described in
+> [Compatibility §5](05-compatibility.md#5-in-band-versioning-the-served-sets) real
+> rather than aspirational. Promoting `0xC5` to a core class was always a
+> fold-and-reprise on paper; in fact the fold could be written and the extension's ops
+> could never be removed, so the class could never be retired and the promotion left two
+> live encodings for ever. Now: `prune_ext` marks the old ops, `hard_prune` reclaims
+> their bytes if the Workspace wants them back, and the `ext_binding` intervals saying
+> what they meant stay in the log for the readers who still have to chain past them.
+
 ### Guidance — a prune discloses a grouping
 
 *Non-normative. No rule here binds anyone; this is a design note for whoever
 builds a client.*
 
 A prune is readable by the server, by necessity. Its contents are content-free —
-positions, author positions, hashes, all of which the server already holds. But
-**the set itself carries information**: it says *these ops are reprised by that
-one*.
+positions, author positions, hashes, all of which the server already holds, and on a
+`prune_ext` a class and a NAME it already holds from the binding. But **the set
+itself carries information**: it says *these ops are reprised by that one*.
 
 If a client folds one record at a time, that set is an equivalence class:
 
@@ -1209,13 +1486,14 @@ decoding plus the transition window in (4) already covers.
 **[S]** In order, `422` with `index` unless noted:
 
 1. framing: `invalid_body_length`, `payload_overruns_body`, `non_zero_padding`
-2. shape: `malformed_prune_payload` and the three rules above
+2. shape: `malformed_prune_payload` and the three rules above — and, on a
+   `prune_ext`, its `op_class` and `name` rules as well
 3. `403 role_forbids_prune_type` — the author's role confers `0x81` but not this
    payload's `type` ([Authority](03-authority.md), role rule 5)
 4. `prune_reprise_not_found` — the named reprise is neither earlier in this
-   batch nor already stored **under this same author**. `prune` only: a
-   `hard_prune` names none
-5. per target, in payload order:
+   batch nor already stored **under this same author**. `prune` only: neither a
+   `hard_prune` nor a `prune_ext` names one
+5. per target, in payload order — the table below on a `prune`:
 
 | Refusal | Cause |
 |---|---|
@@ -1227,11 +1505,17 @@ decoding plus the transition window in (4) already covers.
 | `prune_target_already_reprised` | already reprised |
 | `prune_target_is_its_own_reprise` | an op cannot reprise itself |
 
-**[S]** The general rule behind the first three: **no op whose class has bit 7 set
-may be a target.** Everything the server reads is permissions or housekeeping, and
-folding any of it away would destroy the evidence that makes removal auditable at
-all. The two named codes cover the core-assigned cases; extension classes are
-refused under the third.
+**[S]** The general rule behind the first three: **on a `prune`, no op whose class has
+bit 7 set may be a target.** Everything the server reads is permissions or
+housekeeping, and folding any of it away would destroy the evidence that makes removal
+auditable at all. The two named codes cover the core-assigned cases; extension classes
+are refused under the third.
+
+**[S]** A `prune_ext` opens exactly one hole in that rule — **the extension class it
+names, and only at positions where it names the NAME that class was written under**.
+`0x80`, `0x81` and `0xBF` stay unreachable by every type, and any other class, opaque
+or extension, is refused `prune_ext_wrong_class` rather than folded in the wrong lane
+([above](#prune_ext-folding-an-extension-class)).
 
 **[S]** The named reprise, by contrast, may be **any opaque class** — `0x01`,
 `0x02`, or a profile-defined one. The server cannot read the fold either way, so
@@ -1245,13 +1529,17 @@ already commits them to.
 > enrols later, and such a device has nothing to check it against.
 
 **[S]** On a `hard_prune` the two sequences are one sequence: step 2 is rule 1 of the
-five-rule table above, and step 5 is its rules 2 to 5.
+five-rule table above, and step 5 is its rules 2 to 5. On a `prune_ext`, step 2 is the
+same three shape rules plus its two payload rules, and step 5 is its own eight-row
+table.
 
 > **Why step 3 sits here rather than in stage 2.** The role table is consulted per
-> **class**, and stage 2 does that for every op — but `0x81` is one class carrying two
+> **class**, and stage 2 does that for every op — but `0x81` is one class carrying three
 > payload types, and the `type` that role rule 5 turns on lives in the **body**.
 > Nothing reads a body before stage 3. So the class-level verdict stays where every
-> other one is, and the type-level verdict lands at the first point the type is known.
+> other one is, and the type-level verdict lands at the first point the type is known —
+> the same position for all three types, so nothing about which one was written moves
+> where the answer comes from.
 >
 > **And after the shape rules, not before them**, on the discipline this layer keeps
 > throughout: shape asks whether the payload is a well-formed statement at all,
@@ -1273,7 +1561,7 @@ five-rule table above, and step 5 is its rules 2 to 5.
 | `observed_head` | reserved in v1 |
 | the `nonce` on an unsealed op | a content-blind server has no basis to judge it |
 | `key_epoch` on an unsealed op | nothing was sealed; readers hold the rule (§2) |
-| `author_key_id` against the registered key | a device may rotate its signing key; the log is the authority. Stage 1's class check asks a different question (§6) |
+| `author_key_id` against the registered key | a device may rotate its signing key with a `member_amend` ([Authority](03-authority.md)); the log is the authority, and the resolution is positional. Stage 1's class check asks a different question (§6) |
 | padding on opaque bodies (bit 7 clear) | it never unpacks them |
 
 **[S]** These fields are parsed for indexing and stored verbatim. **A replacement
@@ -1547,7 +1835,7 @@ write is:
 | Never refused | Because |
 |---|---|
 | `0x80` control | revoking a compromised device is a security remedy. Gating it on payment makes non-payment a way to keep an attacker's grant alive |
-| `0x81` prune and `hard_prune` | it is the remedy *for this refusal*. Refusing it seals the Workspace under its own ceiling with no way back |
+| `0x81` — every payload type | it is the remedy *for this refusal*. Refusing it seals the Workspace under its own ceiling with no way back |
 
 > The second was a deadlock walked straight into: a Workspace over its allowance
 > refuses writes, the way back under the allowance is to write a `hard_prune`, and a
