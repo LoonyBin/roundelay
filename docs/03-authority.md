@@ -99,6 +99,7 @@ nothing later revisits it.
        founding root_pk ──────►  bound to the Workspace id, for ever
                           │
    current root_pk ───────┴───►  the key every certificate is checked against
+                                  first (§6)
         (materialised from the log — the same one, until a handover)
 ```
 
@@ -262,9 +263,10 @@ because it is the op that establishes access: a `workspace_genesis`, or a
 > first op it writes. Both would be refused for not yet being what they are about to
 > become.
 
-**[S]** The exemption opens nothing, because the exempt op carries a **Root-signed
-certificate for the Workspace it names**. A device may present its own registration
-anywhere; only the one this Workspace's Root signed is accepted.
+**[S]** The exemption opens nothing, because the exempt op carries a certificate **for
+the Workspace it names, signed under that Workspace's own root authority** (§6). A
+device may present its own registration anywhere; only the one this Workspace's
+authority signed is accepted.
 
 ---
 
@@ -445,6 +447,18 @@ is what stops one document's signature verifying as another's.
 `POST /v1/members` ([Identity](02-identity.md)) rather than inside an op, under the
 same codes. One certificate, one vocabulary, whichever door it arrives at.
 
+**[S]** Step 2 picks the same **authority** at both doors — root authority (§6), never
+a single fixed key — and can only ask for it in the terms its door has. An op has a
+position, so its certificate is judged against the delegations live **there**. The
+route has none, so it is judged against those live **as it evaluates**, and the op the
+certificate is later carried in is judged again where it lands
+([Identity](02-identity.md), which fixes the exact candidate order at that door).
+
+> Which is not two rules. It is one rule — a delegation authorises from its own
+> position — asked by a door that stands inside the log and by a door that stands
+> before it. The route's answer buys the ordering it always bought, and the log's
+> answer is still the one that decides.
+
 ### The seven documents
 
 ```json
@@ -492,8 +506,9 @@ same codes. One certificate, one vocabulary, whichever door it arrives at.
 **[W]** The `founder` block is a **closed set of exactly ten keys**: the registration
 certificate's own set minus `workspace_id` — `member_id`, `member_kind`, `holder_ref`,
 `control_pk` and `control_key_id`, `content_pk` and `content_key_id`, `kex_pk` and
-`kex_key_id`, `registered_at_hlc`. Present or absent, no substitutions, judged as shape
-like every other closed set (§5).
+`kex_key_id`, `registered_at_hlc`. **All ten present**, no substitutions and no
+additions, judged as shape like every other closed set (§5) — a founder with a key
+missing is `malformed_control_payload`, never a founder with fewer keys.
 
 > Minus that one field because the genesis already carries it, once. A nested copy
 > would be a second spelling of a single value, and the only thing to do with a second
@@ -792,6 +807,16 @@ delegate's signature is equally good — with three exceptions.
    revoke certificates, incl. owner   vault records → Keys
 ```
 
+**[S]** "Root-signed", said of a control payload anywhere in this document, means
+**signed under root authority** — so the permission bypass carries too: a payload a
+live delegate signed is accepted regardless of the author's permissions, exactly as a
+Root-signed one is (§2, rule 2 of §7, bar 2 of §8).
+
+> Which the delegable list above already forces. A device a delegate has just
+> certified holds no grant in the Workspace it is joining — that is what joining
+> means — so if the bypass read *Root* literally, the one op this delegation exists to
+> authorise would be the one op the device could not post.
+
 **[W]** A delegation is created and revoked **only by Root itself**. A delegate
 cannot delegate, and cannot revoke a delegation — its own or another's.
 
@@ -830,6 +855,14 @@ not where it is read.
 > Which is also the shape of the risk, stated plainly: revoking a delegation stops it
 > signing anything **new**. Everything it already signed stands, and if it was
 > compromised you must go and revoke those things individually — or hand over.
+
+**[S]** `POST /v1/members` is the one door with **no position to be judged at** — it
+runs before the op exists, and often before the joining device is anything to the
+Workspace at all. There the same authority is materialised **live as the route
+evaluates the request**, and the certificate is judged again, positionally, when it
+lands as a `member_register` op ([Identity](02-identity.md)). A `workspace_genesis`
+never reaches this question: it is not delegable, so that branch tries the carried
+`root_pk` and nothing else.
 
 **[S]** A delegation is **disposable**. It has no vault, no recovery path and no
 escrow; losing the key costs one `revoke_delegation` and one `delegate`.
@@ -896,9 +929,10 @@ may not open.
 > which means a vault fetch and a ceremony. That asymmetry favours the attacker.
 > Making both ends cost Root closes it.
 
-**[S]** In rules 2 and 3, `root` means the Workspace's **current** Root. After a
-handover, new `owner` grants and revokes of old ones are both signed by the incoming
-key.
+**[S]** In rules 2 and 3, `root` names the root authority of §6, resolved at the
+op's position — the **current** Root or a delegation live there, never the founding
+key. After a handover, new `owner` grants and revokes of old ones verify under the
+incoming key, or a delegation it has since minted.
 
 > `granter: "root"` names an authority, not a particular key. Resolving it at
 > verification time is what lets a Workspace that has changed Root keep revoking the
@@ -968,13 +1002,18 @@ credential for a bar to test:
 ```
    GET  /v1/vault/{locator}     nothing — knowing the locator is the claim
    PUT  /v1/vault/{locator}     a Root signature inside the body
-   POST /v1/members             a Root-signed certificate inside the body
+   POST /v1/members             a certificate signed under root authority,
+                                inside the body
 ```
 
 > `POST /v1/members` evaluates neither bar. It is gated by the certificate in its
 > body — creation on the founding branch, an existing Workspace and its current Root
 > on the joining one ([Identity](02-identity.md)). The bars describe credentials, and
 > that route presents none.
+>
+> The vault row above it is the narrower claim on purpose: a vault record is one of
+> the three documents §6 withholds from delegates, so there it really is **Root**, and
+> not the authority Root may hand out.
 
 **[S]** "Revoked" is defined **per Workspace**: a device is revoked in a Workspace
 iff it has at least one grant there and none live there. Revoked in one Workspace
@@ -994,7 +1033,8 @@ bar 1.
 > The pre-grant case is what lets an enrolling device pull and replay the control log
 > before it holds any permission — which it must, to discover what it has joined. It
 > reopens nothing: reads are already limited to Workspaces this device is registered
-> in, and a registration is a Root-signed certificate somebody deliberately issued.
+> in, and a registration is a certificate this Workspace's own root authority
+> deliberately issued.
 
 ---
 
@@ -1011,6 +1051,15 @@ for every class but control.
 | 2 | `403 no_live_grant` | no live grant here; `revoked: true` if there once was |
 | 3 | `403 role_forbids_op_class` | grants exist, but no role permits this class; carries `op_class` and the live `roles` |
 | 4 | `409 key_epoch_stale` / `key_epoch_unknown` | → [Keys](04-keys.md) |
+
+**[S]** The `roles` a refusal carries are **sorted lexicographically** — here, and on
+`role_forbids_prune_type` (§7), the other code that carries them.
+
+> Determinism, on the precedent the `fields` list of an unknown-field refusal already
+> sets ([Compatibility §4](05-compatibility.md#4-unknown-fields-are-refused)). The set
+> a device holds has no natural order, so without a stated one two servers answer the
+> same state with different bytes, and anything that compares refusals — a test, a
+> cache, a client that dedupes its alarms — sees a difference that is not there.
 
 ---
 
@@ -1089,8 +1138,9 @@ or whether it should be written at all.
 **[S]** A **repeat** is never judged against the tip: a re-posted control op names the
 tip it was built against, which has since moved — §12.
 
-**[S]** Then, **unless the payload is Root-signed**, the authority-role check for
-`0x80`: `no_live_grant` or `role_forbids_op_class`.
+**[S]** Then, **unless the payload is Root-signed** — which a live delegate's
+signature satisfies (§6) — the authority-role check for `0x80`: `no_live_grant` or
+`role_forbids_op_class`.
 
 **[S]** One rule spans types: **an author's first op must be the control op that
 registers it** — a `member_register`, or the genesis that embeds one. Otherwise
@@ -1143,7 +1193,7 @@ in force is that it already exists, and that is check 1.
 `cert_key_mismatch`, `unknown_member_kind`.
 
 **[S]** `workspace_not_created` comes first because nothing about the op can be
-judged against a Workspace that does not exist — there is no current Root to verify
+judged against a Workspace that does not exist — there is no root authority to verify
 under. The route's joining branch already answers the same code for the same cause
 ([Identity](02-identity.md)): one certificate, one verdict, whichever door.
 
@@ -1159,6 +1209,16 @@ under. The route's joining branch already answers the same code for the same cau
 > checks precede the vocabulary one because they ask whether this document belongs here
 > at all.
 
+**[S]** `cert_member_mismatch` here is **the certificate naming a device other than
+the envelope's author**. Registrations are self-posted: the carve-out that exempts
+this op from the access gate exempts a `member_register` *naming the author* (§3.2),
+and this check is what holds the op to that.
+
+> Otherwise the exemption would be a hole rather than a carve-out. A device could post
+> somebody else's registration as its own first op, and the one rule that lets an
+> unregistered author write at all would be doing it for an author its own document
+> does not name.
+
 ### `grant`
 
 **[S]** In order:
@@ -1170,7 +1230,7 @@ under. The route's joining branch already answers the same code for the same cau
 | `422 bad_grant_signature` | the named authority did not sign these bytes |
 | `422 unknown_role` | the certificate's role token is not in the profile's set |
 | `422 owner_grant_requires_root` | an `owner` grant not granted by Root |
-| `422 unknown_grantee` | three causes — see below |
+| `422 unknown_grantee` | two causes — see below |
 | `422 member_kind_forbidden` | the profile's rule rejects it |
 | `409 grant_id_already_used` | a *different* op already used this grant id |
 
@@ -1182,16 +1242,23 @@ with the payload's, **or** a device authority is not the posting author.
 > is a forgery attempt, not a spelling. And a device cannot post a grant claiming some
 > *other* device approved it.
 
-**[S]** `unknown_grantee` covers: no such device; a device with no accepted
-registration **in this Workspace**.
+**[S]** `unknown_grantee` covers: **no such device anywhere**; and a device that does
+exist — a shell, or a member of some other Workspace — with **no accepted registration
+in this Workspace**.
 
 > A grant is never held as a dangling forward reference. If the grantee is not already
 > established in the log, the grant means nothing.
 >
+> A shell is not a third cause, it is the second one. Both are the same absence read
+> off the same place: this Workspace's own log, which knows registrations and nothing
+> else. The device registry could tell a stranger from a shell, and it is not consulted
+> — it is authoritative for nobody (§1), and a grant that branched on it would be a
+> permission decided by server state rather than by the log.
+>
 > Note what is *not* on that list: whose device it is. A grant may name any device
 > registered here, whatever identity holds it. That is what makes a Workspace
-> shareable, and it is safe because the registration it depends on was signed by this
-> Workspace's own Root.
+> shareable, and it is safe because the registration it depends on was signed under
+> this Workspace's own root authority.
 
 ### `revoke`
 
@@ -1302,8 +1369,10 @@ codes.**
 > A server that can only say `bad_root_signature` destroys information a skewed
 > device cannot recover. The first means *this certificate names a Root that is not
 > this Workspace's* — a client that built the document against the wrong key, which
-> has a real remedy. The second means *these bytes are forged* — not recoverable.
-> Collapsing them is a contract violation, not a simplification.
+> has a real remedy. The second means *these bytes are forged* — not recoverable,
+> save for the one documented race (§6: a delegation revoked between the doors,
+> repaired by a freshly issued certificate). Collapsing them is a contract
+> violation, not a simplification.
 
 **[S]** A handover is **Root-signed, so it needs no grant** (§2), but its author must
 still be a registered device: `member_register_not_first` applies unchanged.
