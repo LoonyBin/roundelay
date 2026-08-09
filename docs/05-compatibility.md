@@ -230,7 +230,12 @@ of this table — see [The Log](01-the-log.md#3-the-class-byte):
 | Range | Owner | Advertised |
 |---|---|---|
 | `0x40–0x7F` opaque | the profile declares them | with the profile |
-| `0xC0–0xFF` server-read | the implementation defines them, the profile enables them | ✓ in the served sets |
+| `0xC0–0xFF` server-read | the implementation defines them, the profile enables them | ✓ `extension_classes` (§7) |
+
+**[S]** That advertisement is a field, not an aspiration: `GET /health` carries
+`extension_classes`, mapping each enabled class to its NAME, `{}` when none
+(§7). The opaque range has no equivalent and needs none — nothing on the wire
+distinguishes a profile-declared opaque class from `0x01`.
 
 **[S]** An implementation that defines none of the second range MUST behave as
 though it were unassigned. Neither range weakens the served-set rule: an undeclared
@@ -337,6 +342,7 @@ recognise.
  "contract_versions": ["v1"],
  "protocol_namespace": "acme",
  "profile": "acme/p1",
+ "extension_classes": {"197": "retention-sweep"},
  "limits": {"max_ops_per_batch": 1000,
             "max_page_size": 1000,
             "default_page_size": 500,
@@ -349,10 +355,33 @@ recognise.
 | `contract_versions` | pick a path prefix, or refuse and say why |
 | `protocol_namespace` | confirm it is talking to the right protocol at all |
 | `profile` | confirm it is talking to the right *deployment* |
+| `extension_classes` | confirm the deployment's extension vocabulary before binding |
 | `limits` | size batches and pages; set the socket idle deadline |
 
 **[S]** MUST remain reachable while the backing store is unavailable — that is its
 purpose.
+
+**[S]** `extension_classes` maps each **enabled** extension class to its NAME, and
+MUST be present — `{}` when none are enabled, never absent. It reports row 10 of the
+[profile obligations](reference/profile-obligations.md) verbatim: the same set, the
+same names, nothing added and nothing withheld.
+
+**[S]** Its keys are the class number in **decimal, as a JSON string** — JSON has no
+other kind of key — and carry the same values `ext_binding` carries as integers ([The
+Log §3](01-the-log.md#3-the-class-byte)). `"197"` is `0xC5`. No leading zeros, no hex
+spelling.
+
+> This is where [The Log §3](01-the-log.md#3-the-class-byte)'s "a server MUST
+> advertise the extension classes it implements in its served sets" is actually
+> served. Without the field, a client discovers the vocabulary by binding and being
+> refused — and neither refusal it can meet says the right thing.
+> `ext_class_not_enabled` says *this deployment does not permit that class*;
+> `ext_name_mismatch` says *your software and this server disagree about what it
+> means*. Both are sharper than the truth, which was only *you were never told*.
+>
+> `{}` rather than an absent field, for the reason the whole layer runs on: absent is
+> indistinguishable from a server too old to carry it, and a client that cannot tell
+> those apart guesses. An empty object is an answer.
 
 **[S]** `limits` MUST carry those four keys and MAY carry more.
 
@@ -382,8 +411,34 @@ advertised pair, not one per route.
 
 **[S]** When it does not: `503 store_unavailable`.
 
-> This is the **one** route whose failure is a state rather than a bug, which is
-> what lets every other layer say "a `500` is a bug" without qualification.
+> Store unavailability is the **one** condition in this specification that is a
+> *state* rather than a bug, which is what lets every other layer say "a `500` is a
+> bug" without qualification. This is the route that exists to be **asked** about it.
+
+### The one state that is not a bug
+
+**[S]** That code is not confined to `GET /health/db`. **Any** route MAY answer
+`503 store_unavailable` while the backing store is unavailable — **except `GET
+/health`**, which MUST stay reachable and answer normally, because that is what it
+is for. The refusal carries no other field, names no cause and says nothing about
+the request: there is nothing it could say, because nothing judged it.
+
+**[C]** A client treats it as **transient**, matched **positively** on §6's rule —
+never as the unmatched default. `GET /health/db` is what it probes to decide whether
+to keep waiting.
+
+> Without this, an outage has no legal answer on a functional route. `POST …/ops`
+> cannot append; it cannot refuse under any code in the [code
+> list](reference/refusal-codes.md), because every one of them is a verdict on the
+> request; and "a `500` is a bug" forbids what is left. The route is left with
+> nothing it may say — a specification mandating an impossibility, rather than a
+> server behaving badly.
+>
+> Carrying nothing is the point, and it is what keeps this from becoming a second
+> `500`. `store_unavailable` is a statement about the **server**, and it is the only
+> refusal in the vocabulary that is. Every other code answers *what was wrong with
+> what you sent*; a client that met one of those and a client that meets this one
+> have learned opposite things, and the empty body is what says so.
 
 ### What is discoverable, and what is not
 

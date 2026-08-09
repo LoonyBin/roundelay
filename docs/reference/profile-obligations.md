@@ -25,6 +25,14 @@ to start with any of them unset.
 **[P]** A profile SHOULD name itself `<namespace>/<revision>`, and **[S]** a server
 MUST report that name as `profile` in `GET /health`.
 
+**[S]** A server MUST likewise report **row 10** there, as `extension_classes` —
+each enabled class number mapped to its NAME, `{}` when the row is empty
+([Compatibility §7](../05-compatibility.md#7-discovery-the-health-endpoints)). Row 1
+is reported as `protocol_namespace` ([Keys](../04-keys.md)), and row 8 governs the
+format of the `version` field. Beyond its name, those three rows are the whole of
+what `GET /health` says about a profile; the rest is the profile document's to
+publish.
+
 ## What a profile is no longer asked
 
 **[P]** A profile MUST NOT specify how a vault locator or wrapping secret is derived,
@@ -178,7 +186,17 @@ Every row answered, no optional row taken up — the smallest thing that starts:
 | 11 | `holder_ref` | the holder's Root public key, verbatim |
 
 > Three rows answered "none", which is an answer rather than an omission — a server
-> started against this table serves `0x01`, `0x02`, `0x80` and `0x81`, and refuses
-> every other class byte. Nothing here is borrowed from anywhere; the table is the
-> whole profile.
+> started against this table serves `0x01`, `0x02`, `0x80`, `0x81` **and `0xBF`**,
+> and refuses every other class byte.
+>
+> `0xBF` is on that list because it is core-assigned, and a core class is served
+> whatever a profile says. An empty row 10 does not withdraw the class; it empties
+> what a binding may **name**. So an `ext_binding` posted here is a well-formed op of
+> a served class, and it is refused `ext_class_not_enabled` — carrying the `op_class`
+> it asked for — never `unsupported_op_class`, which answers about the op's own class
+> ([The Log §3](../01-the-log.md#3-the-class-byte)). The distinction is the whole
+> reason the two codes exist, and this is the profile where it is easiest to
+> collapse.
+>
+> Nothing here is borrowed from anywhere; the table is the whole profile.
 

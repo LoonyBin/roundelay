@@ -188,13 +188,14 @@ informational, and never used to build a signature.
 > `bad_root_signature` — the code that is supposed to mean "forged, unrecoverable"
 > rather than "you're pointed at the wrong deployment". Advertising it is mandatory.
 
-### The thirteen domains
+### The thirteen fixed domains
 
-**[W]** A domain is `<namespace>/<document>/v<n>`:
+**[W]** A **core** domain is `<namespace>/<document>/v<n>`. These thirteen are the
+whole of that set, and it is fixed:
 
 | Document | Frames |
 |---|---|
-| `op` | `header ‖ body` — every envelope |
+| `op` | `header ‖ body` — every envelope of a core- or profile-assigned class, which is every class below `0xC0` |
 | `member-register` | a registration certificate |
 | `workspace-genesis` | a genesis certificate |
 | `grant` | a grant certificate |
@@ -207,6 +208,24 @@ informational, and never used to build a signature.
 | `keywrap` | the member-wrap key derivation and its associated data |
 | `epoch-key-escrow` | the escrow-wrap associated data |
 | `keywrap-digest` | the wrap-set commitment |
+
+**[W]** **The table is closed. The domain space is not.** An envelope of an
+**extension** class (`0xC0–0xFF`) is *not* signed under `op`: it is signed under
+`<namespace>/ext/<name>/v1`, one domain per enabled extension NAME, on rule 2 of
+[The Log §3](01-the-log.md#3-the-class-byte). That family has no row here because
+its names are the deployment's, enumerated by row 10 of the [profile
+obligations](reference/profile-obligations.md) rather than by this specification.
+
+> Two reasons it cannot be a row, and only the second is interesting. The names are
+> not the core's to list — but more than that, the whole point of the split is that
+> a client built against `audit-marker` **cannot verify** an op written under
+> `retention-sweep`, and that only holds if the domain moves with the name. A shared
+> `op` domain would make every extension's ops verify everywhere and mean something
+> different in each place.
+>
+> So "thirteen" counts the fixed set and nothing else. Both parts are needed: the
+> thirteen are frozen, and a deployment that enables three extensions signs under
+> sixteen domains.
 
 **[W]** Every multi-byte integer inside a framed construction is **big-endian**, at
 the fixed width its annotation gives — `u32` is 4 bytes, `u64` is 8. The same
@@ -228,7 +247,8 @@ in-band versioning — see [Compatibility](05-compatibility.md).
 
 **[W]** There is **no domain for the wrapping secret's derivation**, because the
 core does not define one. A client that derives its secret by signing something
-MUST use a domain of its own, disjoint from every row above.
+MUST use a domain of its own, disjoint from **every domain this protocol reaches** —
+the thirteen rows above and every `ext` domain the deployment enables.
 
 > The rule survives even though the construction does not. A key that will sign a
 > protocol message for this specification must never be induced to produce the
@@ -244,9 +264,15 @@ MUST use a domain of its own, disjoint from every row above.
 body was written under. It is an open enum, not a flag:
 
 ```
-   0x00   none           body is the framed payload, in the clear
-   0x01   encrypted      body is that same framed payload, sealed
+   0x00   none           the length-prefixed, padded payload, in the clear
+   0x01   encrypted      that same payload, sealed
 ```
+
+> *Length-prefixed and padded* is the **body layout** of [The Log
+> §2](01-the-log.md#2-the-envelope) — `payload_len`, payload, zero padding to a size
+> class. It is **not** the domain framing of §2 above, which is a different
+> construction wearing the same English word. The two never touch: a body is never
+> domain-framed, and the envelope's signing domain frames it from outside.
 
 **[W]** `0x00` is a member of that enum — *no sealing* — not the absence of a
 value, and a future construction ships as `0x02`
@@ -291,7 +317,7 @@ field is added:
    │              key   = K(workspace, key_epoch)                       │
    │              nonce = the header's own nonce field                  │
    │              aad   = those exact 158 header bytes                  │
-   │              text  = the SAME framed body 0x00 would carry )       │
+   │              text  = the SAME body bytes 0x00 would carry )        │
    │                                                                    │
    │  SIGNATURE  64 bytes, over header ‖ body                           │
    └────────────────────────────────────────────────────────────────────┘
@@ -333,13 +359,34 @@ cover it — two named cases and everything else:
 
 ### And the rule runs the other way for content
 
-**[C]** An **opaque** op — any class with bit 7 clear — at suite `0x00`, at an epoch
-the reader **holds a key for**, is a downgrade and MUST be refused
-`plaintext_at_encrypted_epoch`.
+**[C]** An **opaque** op — any class with bit 7 clear — at suite `0x00` is a
+downgrade, and a reader MUST refuse it `plaintext_at_encrypted_epoch` when it sits
+at a **log position after the Workspace's first `rotate`** — and, in a Workspace
+whose **epoch 0 is keyed**, at *any* position.
 
-> The upgrade is one-way. Once a Workspace is encrypted at some epoch, cleartext at
-> that epoch is either an attack or a broken writer. This verdict is *reader state* —
-> it depends on which keys you hold — so the server never raises it.
+> The upgrade is one-way. Once a Workspace is encrypted, cleartext in it is either
+> an attack or a broken writer.
+>
+> **The test is positional because the epoch field cannot carry it.** An unsealed op
+> carries `key_epoch` 0 by rule ([The Log](01-the-log.md#2-the-envelope)), so *at an
+> epoch the reader holds a key for* only ever asks about epoch 0 — and the Workspace
+> that shipped plaintext and later rotated `0 → 1` has no epoch-0 key at all. Every
+> cleartext op written after that rotation would pass as pre-encryption history,
+> which is exactly the deployment the spec blesses (§4) and exactly the one an
+> epoch test cannot see.
+>
+> One rule covers both shapes of §4. The Workspace that encrypted late is covered by
+> its first `rotate`, because everything before that position is legitimate history
+> and everything after it is a downgrade. The Workspace keyed at genesis is covered
+> by the epoch-0 key it has held from the start, because there was never a
+> pre-encryption stretch to protect.
+>
+> It stays a **reader** rule, and not because the server cannot compute it — the
+> server holds every position and knows which epochs have a published wrap set. It
+> is that the server is the party the check defends against. A downgrade arrives by
+> being *served*, so a check only the server ran would be run by precisely the wrong
+> party, and running it there as well buys a client nothing it does not already have
+> to do for itself.
 
 ---
 
@@ -417,9 +464,26 @@ it had already signed when the rotation landed.
 > member that keeps writing at the old epoch hands it next month's content too, and
 > the remedy quietly becomes worth nothing while every check still passes.
 
-**[S]** An **unkeyed** Workspace refuses neither. There is no epoch to be stale
-against.
+**[S]** An **unkeyed** Workspace is not an exception. It is the same rule at current
+epoch 0: the floor is vacuous — nothing to be stale against — and **the ceiling
+bites at 0**. A sealed op above `key_epoch` 0 is refused `409 key_epoch_unknown`,
+because no epoch was ever materialised for it to name.
 
+> Having no floor is not having no ceiling, and this is where the ceiling matters
+> most. A Workspace that has never rotated is the one place a sealed op at epoch 42
+> could otherwise land — permanently unreadable bytes, parked for ever, which is the
+> precise outcome the ceiling exists to keep out. The slack has nothing to grant
+> here either: there is no previous epoch to be draining from.
+
+**[S]** `key_epoch` 0 stays legal there, and must. That is the **epoch-0 bootstrap
+window**: a Workspace keyed at genesis has an epoch 0, and its wrap set arrives by
+the one route with no rotate behind it (§8) — so sealed epoch-0 ops may legitimately
+precede the upload.
+
+> Which the server cannot distinguish from an unkeyed Workspace anyway; both report
+> a current epoch of 0, and neither needs to be told apart. Epoch 0 is admissible on
+> either reading, and every epoch above it is refusable on both.
+>
 > A deployment that ships plaintext and enables encryption later never has an epoch 0
 > key: its first rotation is `0 → 1`, and its pre-encryption history stays readable
 > under suite `0x00` for ever. A Workspace keyed from genesis does have an epoch 0.
