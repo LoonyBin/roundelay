@@ -35,7 +35,7 @@ Reference material, kept out of the narrative:
 - [Glossary](docs/reference/glossary.md)
 - [Retained state](docs/reference/retained-state.md) — what a server must remember
 - [Profile obligations](docs/reference/profile-obligations.md) — the eleven decisions a deployment makes
-- [Conformance](conformance/checklist.yaml) — 209 machine-readable items
+- [Conformance](conformance/checklist.yaml) — 218 machine-readable items
 
 ---
 

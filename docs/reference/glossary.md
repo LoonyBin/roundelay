@@ -37,11 +37,19 @@ envelopes, used constantly. [Authority](../03-authority.md)
 envelopes and the auth challenge, used occasionally.
 [Authority](../03-authority.md)
 
-**content key** — `K(w, epoch)`. 32 random bytes that seal every opaque body in one
-Workspace at one epoch. [Keys](../04-keys.md)
+**content key** — `K(w, epoch)`. 32 random bytes that seal one Workspace's opaque
+bodies at one epoch, where they are sealed at all. An unkeyed Workspace has none.
+[Keys](../04-keys.md)
 
 **control op** — class `0x80`. Server-read, and the permission record.
 [Authority](../03-authority.md)
+
+**control chain** — the one chain of control payloads a Workspace has, enforced by the
+server. Every non-genesis payload links the previous by SHA-256 over its bytes
+(`prev_control_hash`); only the genesis has none. The **control tip** is the latest
+accepted payload's hash — derived when asked, never stored. A reader verifies the
+chain unbroken from genesis; a break is a truncated or tampered history, not a gap to
+skip. [Authority](../03-authority.md)
 
 **current Root** — the Root a Workspace's certificates are verified against now.
 Equal to the founding Root until a root handover moves it.
@@ -109,7 +117,8 @@ op; within a quadrant the value decides only who may author one.
 [The Log](../01-the-log.md)
 
 **opaque class** — any class with bit 7 clear: `0x00–0x7F`. Never unpacked by the
-server, sealed under the content key, eligible as a prune target.
+server, sealed under the content key where the Workspace is keyed, eligible as a
+prune target.
 [The Log](../01-the-log.md)
 
 **poke** — the empty text frame on the signal socket, meaning "sync from your cursor

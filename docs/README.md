@@ -94,7 +94,7 @@ Reference material, extracted so the narrative does not carry it:
 - [Glossary](reference/glossary.md) — every term, defined once
 - [Retained state](reference/retained-state.md) — what a server must remember
 - [Profile obligations](reference/profile-obligations.md) — the eleven decisions a deployment must make
-- [Conformance](../conformance/checklist.yaml) — 209 machine-readable items
+- [Conformance](../conformance/checklist.yaml) — 218 machine-readable items
 
 ---
 
@@ -228,7 +228,7 @@ boolean, never a string. Ranges:
 
 | Field | Pattern |
 |---|---|
-| hex-64 (`prev_control_hash`, `envelope_hash`) | `^[0-9a-f]{64}$` |
+| hex-64 (`prev_control_hash`, `expected_prev_control_hash`, `envelope_hash`) | `^[0-9a-f]{64}$` |
 | HLC member id | `^[0-9a-f]{32}$` |
 | canonical UUID | `^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$` |
 | `member_kind`, role token | `^[a-z][a-z0-9_-]{0,31}$` |
@@ -322,6 +322,8 @@ changed the system into something else:
 - retention policy, scheduled reclamation, or any deletion it decided on its own
 - holding any key that opens any envelope, wrap or vault record
 - notifications, scheduled work, or any background process at all
-- an operator surface — every route here is member-credentialed, so provisioning,
-  billing and support tooling read the deployment's own storage rather than an API
-  this specification defines
+- an operator surface — the routes here are the members' own plane: a device token,
+  or a certificate, signature or locator the caller carries, or nothing at all where
+  nothing is disclosed. None of them is an operator's, so provisioning, billing and
+  support tooling read the deployment's own storage rather than an API this
+  specification defines

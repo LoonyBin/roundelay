@@ -35,7 +35,7 @@ Every refusal has the shape `{"detail": {"code": …, …extra fields…}}`. On
 | `cert_member_mismatch` | 422 | `POST …/ops` genesis, register; `POST /v1/members` | `index` where per-op | yes | Authority |
 | `cert_root_pk_mismatch` | 422 | `POST …/ops` handover; `POST /v1/members` | `index` where per-op | yes | Authority |
 | `cert_workspace_mismatch` | 422 | `POST …/ops` control | `index` | yes | Authority |
-| `control_chain_break` | 422 | `POST …/ops` control | `index` | yes | Authority |
+| `control_chain_break` | 422 | `POST …/ops` control | `index`, `expected_prev_control_hash` — **absent on a genesis, and where no genesis exists** | yes | Authority |
 | `delegate_pk_in_use` | 422 | `POST …/ops` delegate | `index` | yes | Authority |
 | `delegation_id_already_used` | 409 | `POST …/ops` delegate | `index` | yes | Authority |
 | `duplicate_keywrap_member` | 422 | `PUT …/keywraps` | `index` | yes | Keys |
@@ -74,7 +74,7 @@ Every refusal has the shape `{"detail": {"code": …, …extra fields…}}`. On
 | `malformed_keywrap_digest` | 422 | `PUT …/keywraps` | `expected_bytes` | yes | Keys |
 | `malformed_prune_payload` | 422 | `POST …/ops` `0x81` | `index` | yes | Log |
 | `malformed_request` | 422 | any route | `fields` | yes | Compat |
-| `malformed_root_pk` | 422 | `PUT …/vault`; `POST /v1/members`; `POST …/ops` handover | `expected_bytes`, `index` where per-op | yes | Keys |
+| `malformed_root_pk` | 422 | `PUT …/vault`; `POST /v1/members`; `POST …/ops` delegate, handover | `expected_bytes`, `index` where per-op | yes | Keys |
 | `malformed_sign_pk` | 422 | `POST /v1/members` | `expected_bytes` | yes | Identity |
 | `malformed_vault_blob` | 422 | `PUT …/vault` | — | yes | Keys |
 | `malformed_vault_signature` | 422 | `PUT …/vault` | `expected_bytes` | yes | Keys |
@@ -86,7 +86,7 @@ Every refusal has the shape `{"detail": {"code": …, …extra fields…}}`. On
 | `member_register_not_first` | 422 | `POST …/ops` genesis, register | `index`, `author_seq` | yes | Authority |
 | `missing_keywrap_digest` | 422 | `PUT …/keywraps` | `epoch` | yes | Keys |
 | `no_live_grant` | 403 | device routes | `index` where per-op, `revoked` | no | Authority |
-| `no_registration` | 403 | Workspace-scoped device routes | `index` where per-op | no | Authority |
+| `no_registration` | 403 | Workspace-scoped device routes | — | no | Authority |
 | `no_vault_record` | 404 | `GET …/vault` | — | no | Keys |
 | `non_zero_padding` | 422 | `POST …/ops` server-read classes | `index` | yes | Log |
 | `not_found` | 404 | any unrouted path, including a misshapen locator | — | yes | Compat |
@@ -136,6 +136,13 @@ Every refusal has the shape `{"detail": {"code": …, …extra fields…}}`. On
 One hundred and thirteen. Admission is refused under `admission_refused` whatever mechanism a
 server uses, so the vocabulary stays closed even though the gate is not specified.
 
+**[S]** `fields` — on `malformed_request` as on `unknown_request_field` — always
+names **paths**: dot-separated from the request body, decimal indices for array
+positions, a query parameter as a single segment; every offending one, sorted
+lexicographically ([Compat §4](../05-compatibility.md#4-unknown-fields-are-refused)).
+Under `malformed_request` that is the duplicated key, or the parameter whose value is
+out of range.
+
 ## Client codes
 
 Raised by a device against bytes it pulled — never by the server. Listed because the
@@ -154,7 +161,7 @@ it.
 |---|---|---|
 | `4400` | no token in time, or a binary first frame | protocol error |
 | `4401` | invalid token, or not a device token | park until the token refreshes |
-| `4403` | Workspace unreachable, or device revoked | terminal — do not retry blindly |
+| `4403` | no accepted registration here, or the device is revoked | terminal — do not retry blindly |
 
 `4403` merges two causes the HTTP surface keeps apart. It is the **one sanctioned
 exception** to the no-merging rule, because a close frame carries no body and the
