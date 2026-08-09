@@ -23,8 +23,10 @@ items:
 # ── Contract versioning ──────────────────────────────────────────────────────
 
 - id: CONF-VER-001
-  requirement: Every route in §6 and §7 is served under /v1; /health and /health/db are not.
-  spec: "docs/05-compatibility.md"
+  requirement: >
+    Every functional route the five layers define is served under /v1; only
+    /health and /health/db sit outside the prefix.
+  spec: "docs/05-compatibility.md §3"
   subject: server
   observable: black-box
   codes: []
@@ -89,9 +91,10 @@ items:
 
 - id: CONF-VER-008
   requirement: >
-    Wrong JSON scalar types are refused: a boolean or float where §2.4 requires an
-    integer, and an out-of-range integer.
-  spec: "docs/README.md"
+    Wrong JSON scalar types are refused: a boolean, float or string where the
+    conventions require an integer, and an integer outside the field's documented
+    range.
+  spec: "docs/README.md §6"
   subject: server
   observable: black-box
   codes: [malformed_request]
@@ -162,11 +165,16 @@ items:
   test: tests/conformance/test_wire.py::test_length_floors
 
 - id: CONF-WIRE-004
-  requirement: Suite 0x01 with op_class 0x80 gives encrypted_control_op; with op_class 0x81, encrypted_prune_op.
-  spec: "docs/04-keys.md"
+  requirement: >
+    A served suite on a class that forbids it is the encrypted_* family, never
+    unsupported_suite: suite 0x01 gives encrypted_control_op on 0x80,
+    encrypted_prune_op on 0x81, and encrypted_server_read_op on 0xBF or on an enabled
+    extension class — while a suite byte this server does not serve gives
+    unsupported_suite on those same classes.
+  spec: "docs/04-keys.md, docs/01-the-log.md"
   subject: server
   observable: black-box
-  codes: [encrypted_control_op, encrypted_prune_op]
+  codes: [encrypted_control_op, encrypted_prune_op, encrypted_server_read_op, unsupported_suite]
   test: tests/conformance/test_wire.py::test_forbidden_pairs
 
 - id: CONF-WIRE-005
@@ -402,10 +410,9 @@ items:
 - id: CONF-CRED-006
   requirement: >
     On the founding branch, POST /v1/members is gated by the Root-signed certificate in
-    its body and consults no stored Root: a workspace_genesis certificate whose root_pk
-    may not create the Workspace id it names answers 403 workspace_not_reachable, and
-    one Root did not sign answers 422 bad_root_signature — both before any Workspace
-    exists.
+    its body alone: a workspace_genesis certificate whose root_pk may not create the
+    Workspace id it names answers 403 workspace_not_reachable, and one Root did not
+    sign answers 422 bad_root_signature — both before any Workspace of that id exists.
   spec: "docs/02-identity.md"
   subject: server
   observable: black-box
@@ -436,10 +443,11 @@ items:
 
 - id: CONF-AUTHZ-001
   requirement: >
-    Exhaustive route x principal matrix: every route in §3.7 against no credential, a
-    User token, a member token with zero Grants, a member token per role, and a member
+    Exhaustive route x principal matrix: every route at either bar, and the three
+    outside them, against no credential, a refresh token presented as a bearer access
+    token, a device token with zero Grants, a device token per role, and a device
     token with all Grants revoked, each yielding the documented status.
-  spec: "docs/01-the-log.md"
+  spec: "docs/03-authority.md §8"
   subject: server
   observable: black-box
   codes: [invalid_credential, no_registration, no_live_grant, role_forbids_op_class, keywrap_requires_owner]
@@ -447,8 +455,9 @@ items:
 
 - id: CONF-AUTHZ-002
   requirement: >
-    A device with no accepted registration in a Workspace answers 403 no_registration
-    on every Workspace-scoped device route, before any other check.
+    In a Workspace with an accepted genesis, a device with no accepted registration
+    answers 403 no_registration on every Workspace-scoped device route, before any
+    other check.
   spec: "docs/03-authority.md"
   subject: server
   observable: black-box
@@ -644,9 +653,9 @@ items:
 
 - id: CONF-MEM-003
   requirement: >
-    member_id_already_registered fires for a different User, a different sign_pk, a
-    conflicting kex_pk, and a supplied kex_pk where none is stored; omitting kex_pk
-    when one is stored answers 200.
+    member_id_already_registered fires for a different control_pk, a different
+    content_pk, a conflicting kex_pk, and a supplied kex_pk where none is stored;
+    omitting kex_pk when one is stored answers 200.
   spec: "docs/02-identity.md"
   subject: server
   observable: black-box
@@ -656,7 +665,8 @@ items:
 - id: CONF-MEM-004
   requirement: >
     GET /v1/w/{w}/members lists exactly the Members whose Root-signed registration
-    named that Workspace, ordered by raw member_id ascending, with no chained field.
+    named that Workspace, ordered by raw member_id ascending, with no chained field,
+    and each entry carries the registration's member_kind as stored.
   spec: "docs/02-identity.md"
   subject: server
   observable: black-box
@@ -748,12 +758,12 @@ items:
 
 - id: CONF-LOG-004
   requirement: >
-    Stage 1 is a full pass: [content op with no Grant, malformed base64] answers on
-    index 1, not index 0.
+    Stage 1 is a full pass: [content op with no Grant, malformed base64] answers 422
+    malformed_base64 on index 1, not index 0.
   spec: "docs/01-the-log.md"
   subject: server
   observable: black-box
-  codes: [malformed_request]
+  codes: [malformed_base64]
   test: tests/conformance/test_oplog.py::test_stage_one_is_a_full_pass
 
 - id: CONF-LOG-005
@@ -767,11 +777,14 @@ items:
   test: tests/conformance/test_oplog.py::test_stages_two_to_four_are_per_op
 
 - id: CONF-LOG-006
-  requirement: A batch exceeding limits.max_ops_per_batch answers 413 batch_too_large with max_ops.
+  requirement: >
+    Neither stage-0 refusal names an op: a batch exceeding limits.max_ops_per_batch
+    answers 413 batch_too_large carrying max_ops and no index, and no_registration on
+    POST …/ops carries no index either.
   spec: "docs/01-the-log.md"
   subject: server
   observable: black-box
-  codes: [batch_too_large]
+  codes: [batch_too_large, no_registration]
   test: tests/conformance/test_oplog.py::test_batch_ceiling
 
 - id: CONF-LOG-007
@@ -882,6 +895,18 @@ items:
   codes: []
   test: tests/conformance/test_oplog.py::test_non_validation_list
 
+- id: CONF-LOG-018
+  requirement: >
+    The (workspace, author, op_id) lookup sits after stage 1 and before stage 2: a
+    repeat whose key_epoch has since fallen below the floor answers duplicate=true and
+    never key_epoch_stale, while a repeat of an extension class the deployment has
+    since disabled answers unsupported_op_class.
+  spec: "docs/01-the-log.md"
+  subject: server
+  observable: black-box
+  codes: [key_epoch_stale, unsupported_op_class]
+  test: tests/conformance/test_oplog.py::test_idempotency_lookup_placement
+
 # ── Control ops ──────────────────────────────────────────────────────────────
 
 - id: CONF-CTL-001
@@ -907,8 +932,10 @@ items:
 - id: CONF-CTL-003
   requirement: >
     An all-zero prev_control_hash on a non-genesis type, and a non-zero one on a
-    genesis, are both refused control_chain_break — and control_chain_break precedes
-    genesis_not_first for a misplaced genesis with a non-zero link.
+    genesis, are both refused control_chain_break — the refusal on a genesis carrying
+    no expected_prev_control_hash, since a genesis has no tip to name — and
+    control_chain_break precedes genesis_not_first for a misplaced genesis with a
+    non-zero link.
   spec: "docs/03-authority.md"
   subject: server
   observable: black-box
@@ -991,6 +1018,52 @@ items:
   observable: black-box
   codes: []
   test: tests/conformance/test_control.py::test_no_cascade
+
+- id: CONF-CTL-012
+  requirement: >
+    The control chain is linear and server-enforced: a non-genesis control op whose
+    prev_control_hash is not the tip at its position is refused control_chain_break
+    carrying expected_prev_control_hash; three correctly linked control ops are
+    accepted in sequence; and within one batch the second control op links the first.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [control_chain_break]
+  test: tests/conformance/test_control.py::test_chain_is_linear
+
+- id: CONF-CTL-013
+  requirement: >
+    Two concurrent control ops naming one tip produce exactly one winner: the loser
+    answers control_chain_break carrying expected_prev_control_hash, and a rebuild
+    against that value is accepted.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [control_chain_break]
+  test: tests/conformance/test_races.py::test_concurrent_control_ops
+
+- id: CONF-CTL-014
+  requirement: >
+    A re-posted control op whose link is now stale answers duplicate=true, never
+    control_chain_break.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [control_chain_break]
+  test: tests/conformance/test_control.py::test_repeat_not_judged_against_tip
+
+- id: CONF-CTL-015
+  requirement: >
+    Before a genesis the tip comparison is not asked: a member_register carrying a
+    well-formed non-zero prev_control_hash into a Workspace with no genesis answers
+    409 workspace_not_created and never control_chain_break, while the same op
+    carrying a zero link answers control_chain_break with no
+    expected_prev_control_hash field.
+  spec: "docs/03-authority.md"
+  subject: server
+  observable: black-box
+  codes: [control_chain_break, workspace_not_created]
+  test: tests/conformance/test_control.py::test_pregenesis_chain_check
 
 # ── Prune ops ────────────────────────────────────────────────────────────────
 
@@ -1126,7 +1199,9 @@ items:
   test: tests/conformance/test_signal.py::test_close_4400
 
 - id: CONF-SIG-003
-  requirement: An invalid token, or a valid User token, closes with 4401.
+  requirement: >
+    An invalid token, or a valid refresh token sent in place of a device access token,
+    closes with 4401.
   spec: "docs/01-the-log.md"
   subject: server
   observable: black-box
@@ -1135,8 +1210,8 @@ items:
 
 - id: CONF-SIG-004
   requirement: >
-    An unreachable Workspace or a revoked Member closes with 4403, at the handshake and
-    on an already-open socket.
+    A device holding no accepted registration here, and a revoked device, each close
+    with 4403, at the handshake and on an already-open socket.
   spec: "docs/01-the-log.md"
   subject: server
   observable: black-box
@@ -1168,6 +1243,17 @@ items:
   observable: black-box
   codes: []
   test: tests/conformance/test_signal.py::test_expiry_does_not_close
+
+- id: CONF-SIG-008
+  requirement: >
+    A device holding no registration opens WS /signal on a Workspace with no genesis:
+    the socket is accepted and the handshake acknowledged by the empty frame, never
+    closed 4403, and its first poke arrives when the genesis lands.
+  spec: "docs/03-authority.md §3.2"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_signal.py::test_pregenesis_socket
 
 # ── Vault ────────────────────────────────────────────────────────────────────
 
@@ -1313,7 +1399,7 @@ items:
     position, not the current one, so a log spanning a handover replays without refusal.
   spec: "docs/03-authority.md"
   subject: client
-  observable: black-box
+  observable: white-box
   codes: [bad_root_signature]
   test: tests/conformance/client/test_handover.py::test_positional_root_verification
 
@@ -1367,11 +1453,17 @@ items:
   test: tests/conformance/test_keyplane.py::test_entry_validation
 
 - id: CONF-KEY-006
-  requirement: A malformed escrow wrap or an out-of-range epoch is refused before authorization-independent work.
-  spec: "docs/04-keys.md"
+  requirement: >
+    PUT …/keywraps refuses its two top-level fields at their documented positions:
+    malformed_key_epoch after no_registration and before no_live_grant, so a caller
+    with no live grant and an out-of-range epoch answers malformed_key_epoch; and
+    malformed_escrow_wrap after keywrap_requires_owner and before any per-entry check,
+    so a non-authority caller with a malformed escrow wrap answers
+    keywrap_requires_owner.
+  spec: "docs/04-keys.md §8"
   subject: server
   observable: black-box
-  codes: [malformed_escrow_wrap, malformed_key_epoch]
+  codes: [malformed_escrow_wrap, malformed_key_epoch, no_live_grant, keywrap_requires_owner]
   test: tests/conformance/test_keyplane.py::test_top_level_validation
 
 - id: CONF-KEY-007
@@ -1549,8 +1641,10 @@ items:
 
 - id: CONF-HARD-003
   requirement: >
-    A hard_prune naming a 0x81 op is refused hard_prune_target_is_prune, so the
-    hashes that let a verifier chain past an existing hole always survive.
+    A hard_prune naming a 0x81 op is refused hard_prune_target_is_prune even though
+    that target is necessarily not marked reprised — rule 2 runs before rule 3, which
+    is the only reason the code is reachable — so the hashes that let a verifier chain
+    past an existing hole always survive.
   spec: "docs/01-the-log.md"
   subject: server
   observable: black-box
@@ -1724,7 +1818,7 @@ items:
   requirement: A client verifies every pulled envelope's Ed25519 signature and refuses on failure.
   spec: "docs/01-the-log.md"
   subject: client
-  observable: black-box
+  observable: white-box
   codes: [bad_signature]
   test: tests/conformance/client/test_verification.py::test_signature_checked
 
@@ -1732,7 +1826,7 @@ items:
   requirement: A client verifies prev_author_hash against its own verified head.
   spec: "docs/01-the-log.md"
   subject: client
-  observable: black-box
+  observable: white-box
   codes: []
   test: tests/conformance/client/test_verification.py::test_chain_checked
 
@@ -1743,7 +1837,7 @@ items:
     the first even when it holds nothing earlier from that author.
   spec: "docs/01-the-log.md"
   subject: client
-  observable: black-box
+  observable: white-box
   codes: []
   test: tests/conformance/client/test_verification.py::test_author_zero_link_rule
 
@@ -1751,9 +1845,20 @@ items:
   requirement: A client refuses an op with a non-zero observed_head in v1.
   spec: "docs/01-the-log.md"
   subject: client
-  observable: black-box
+  observable: white-box
   codes: []
   test: tests/conformance/client/test_verification.py::test_observed_head_zero
+
+- id: CONF-CLI-023
+  requirement: >
+    A client refuses an unsealed envelope carrying a non-zero nonce, and one carrying
+    a non-zero key_epoch — both fields have exactly one legal value at suite 0x00, and
+    the server judges neither.
+  spec: "docs/01-the-log.md"
+  subject: client
+  observable: white-box
+  codes: []
+  test: tests/conformance/client/test_verification.py::test_unsealed_header_zeroes
 
 - id: CONF-CLI-016
   requirement: >
@@ -1762,7 +1867,7 @@ items:
     unequal holder_ref across two Workspaces is two.
   spec: "docs/03-authority.md"
   subject: client
-  observable: black-box
+  observable: white-box
   codes: []
   test: tests/conformance/client/test_verification.py::test_holder_ref_not_cross_workspace
 
@@ -1773,7 +1878,7 @@ items:
     one read and absent on a later one.
   spec: "docs/01-the-log.md"
   subject: client
-  observable: black-box
+  observable: white-box
   codes: []
   test: tests/conformance/client/test_verification.py::test_history_view_not_durable
 
@@ -1781,7 +1886,7 @@ items:
   requirement: A client verifies author_key_id against the key learned from that Member's registration.
   spec: "docs/01-the-log.md"
   subject: client
-  observable: black-box
+  observable: white-box
   codes: []
   test: tests/conformance/client/test_verification.py::test_key_id_checked
 
@@ -1791,7 +1896,7 @@ items:
     decrypted plaintext under suite 0x01.
   spec: "docs/01-the-log.md"
   subject: client
-  observable: black-box
+  observable: white-box
   codes: [invalid_body_length, payload_overruns_body, non_zero_padding]
   test: tests/conformance/client/test_framing.py::test_padding_rules
 
@@ -1801,7 +1906,7 @@ items:
     key for, and raises aead_failure for a body that does not authenticate.
   spec: "docs/04-keys.md"
   subject: client
-  observable: black-box
+  observable: white-box
   codes: [plaintext_at_encrypted_epoch, aead_failure]
   test: tests/conformance/client/test_suites.py::test_downgrade_and_aead
 
@@ -1811,9 +1916,33 @@ items:
     when its own control state is empty.
   spec: "docs/03-authority.md"
   subject: client
-  observable: black-box
+  observable: white-box
   codes: [control_chain_break]
   test: tests/conformance/client/test_control.py::test_truncated_log_detected
+
+- id: CONF-CLI-021
+  requirement: >
+    A client served a control log with a middle op removed rejects it as truncated or
+    tampered: the surviving links no longer form one unbroken chain from genesis, and
+    the ops either side of the hole are not replayed as a valid history, though every
+    one of them verifies on its own.
+  spec: "docs/03-authority.md"
+  subject: client
+  observable: white-box
+  codes: [control_chain_break]
+  test: tests/conformance/client/test_control.py::test_middle_op_removal_detected
+
+- id: CONF-CLI-022
+  requirement: >
+    On control_chain_break a client that can read the Workspace pulls the control log
+    again before rebuilding, rather than re-linking against the returned
+    expected_prev_control_hash: a GET …/ops appears between the refusal and the next
+    POST …/ops.
+  spec: "docs/03-authority.md §10"
+  subject: client
+  observable: black-box
+  codes: [control_chain_break]
+  test: tests/conformance/client/test_control.py::test_rebuild_re_reads_the_log
 
 - id: CONF-CLI-008
   requirement: >
@@ -1850,7 +1979,7 @@ items:
     another code's meaning.
   spec: "docs/05-compatibility.md"
   subject: client
-  observable: black-box
+  observable: white-box
   codes: []
   test: tests/conformance/client/test_codes.py::test_unknown_code_surfaced
 
@@ -1871,7 +2000,7 @@ items:
     record.
   spec: "docs/04-keys.md"
   subject: client
-  observable: black-box
+  observable: white-box
   codes: []
   test: tests/conformance/client/test_vault.py::test_master_wrap_key_survives_rewrite
 
@@ -1882,7 +2011,7 @@ items:
     still opens.
   spec: "docs/04-keys.md"
   subject: client
-  observable: black-box
+  observable: white-box
   codes: []
   test: tests/conformance/client/test_vault.py::test_master_wrap_key_survives_handover
 
@@ -1954,12 +2083,13 @@ items:
 - id: CONF-ADM-008
   requirement: >
     Certificate type alone selects the branch: a workspace_genesis certificate takes
-    the admitted path even when that Workspace already exists, and the server performs
-    no Workspace lookup to decide.
+    the admitted path even when the Workspace it names already exists: with the gate
+    closed the verdict is 403 admission_refused, never the joining branch's
+    workspace_not_created or cert_root_pk_mismatch.
   spec: "docs/02-identity.md"
   subject: server
   observable: black-box
-  codes: [admission_refused]
+  codes: [admission_refused, workspace_not_created, cert_root_pk_mismatch]
   test: tests/conformance/test_admission.py::test_branch_is_syntactic
 
 - id: CONF-ADM-004
@@ -2083,11 +2213,14 @@ items:
 - id: CONF-DKEY-001
   requirement: >
     A server-read envelope carrying the content key id, and an opaque envelope
-    carrying the control key id, each answer 422 author_key_class_mismatch.
-  spec: "docs/03-authority.md"
+    carrying the control key id, each answer 422 author_key_class_mismatch. The check
+    lands in stage 1, header-only, before stage 2's permission checks: an op that is
+    both class-mismatched and unauthorised answers author_key_class_mismatch, not
+    no_live_grant.
+  spec: "docs/03-authority.md, docs/01-the-log.md"
   subject: server
   observable: black-box
-  codes: [author_key_class_mismatch]
+  codes: [author_key_class_mismatch, no_live_grant]
   test: tests/conformance/test_device_keys.py::test_key_matches_class
 
 - id: CONF-DKEY-002
