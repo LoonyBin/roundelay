@@ -17,14 +17,14 @@ author's chain, per Workspace. Not the transport position.
 [The Log](../01-the-log.md)
 
 **authority role** — the role named `owner`: the only role that may author
-non-Root-signed control ops, and the only one whose grants require Root to create or
-revoke. [Authority](../03-authority.md)
+non-Root-signed control ops, and the only one whose grants require root authority
+(Authority §6) to create or revoke. [Authority](../03-authority.md)
 
 **bar** — one of the two authorisation tiers: member-GET, or member plus a live
 grant. [Authority](../03-authority.md)
 
-**chained** — of a device: having a Root-signed registration accepted into the log. A
-shell that has none confers no authority. [Identity](../02-identity.md)
+**chained** — of a device: having a registration signed under root authority accepted
+into the log. A shell that has none confers no authority. [Identity](../02-identity.md)
 
 **class byte** — the byte at header offset 0. Bit 7 says whether the server reads the
 body; bit 6 says whether the value is defined outside the core; the low six select
@@ -162,6 +162,14 @@ a role entry that names it. [The Log](../01-the-log.md)
 **Root** — the identity: an Ed25519 keypair whose public key names the Workspaces it
 founded. Signs certificates; never authenticates; never appears in a header. Not a
 credential. [Authority](../03-authority.md)
+
+**root authority** — the signing authority a Workspace's control documents verify
+under: its current Root, or a delegation live at the relevant point — positional at
+that op's position on the append path, live as the route evaluates the request at
+`POST /v1/members`. What "Root-signed" means, said of a control payload, and the
+permission bypass carries with it. Genesis, handover and the vault are never
+delegable, so there root authority is the current Root alone.
+[Authority §6](../03-authority.md#6-delegation-keeping-root-cold)
 
 **root handover** — the control op that moves a Workspace's current Root to a new
 key, signed by the key it retires. [Authority](../03-authority.md)

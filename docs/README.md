@@ -94,7 +94,7 @@ Reference material, extracted so the narrative does not carry it:
 - [Glossary](reference/glossary.md) — every term, defined once
 - [Retained state](reference/retained-state.md) — what a server must remember
 - [Profile obligations](reference/profile-obligations.md) — the eleven decisions a deployment must make
-- [Conformance](../conformance/checklist.yaml) — 218 machine-readable items
+- [Conformance](../conformance/checklist.yaml) — 226 machine-readable items
 
 ---
 
@@ -192,7 +192,7 @@ error shape — a client that branches on `detail.code` never meets a bare strin
 | `413` | Too big |
 | `422` | Well-formed JSON, invalid contents |
 | `429` | Rate limited; `retry_after_seconds` says how long |
-| `503` | The backing store is unavailable — `GET /health/db` only |
+| `503` | The backing store is unavailable — any route may answer it; `GET /health/db` is where you ask |
 
 **[S]** `401` responses carry `WWW-Authenticate: Bearer`.
 

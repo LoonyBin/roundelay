@@ -82,7 +82,7 @@ Every refusal has the shape `{"detail": {"code": …, …extra fields…}}`. On
 | `member_challenge_rate_limited` | 429 | `POST /v1/members/{m}/challenge` | `retry_after_seconds` | no | Identity |
 | `member_id_already_registered` | 409 | `POST /v1/members` | — | yes | Identity |
 | `member_kind_forbidden` | 422 | `POST …/ops` grant | `index`, `member_kind` | yes | Authority |
-| `member_quota_exhausted` | 402 | `POST …/ops` | `index` | no | Log |
+| `member_quota_exhausted` | 402 | `POST …/ops` | `index` — **the first op at which the bound was crossed** | no | Log |
 | `member_register_not_first` | 422 | `POST …/ops` genesis, register | `index`, `author_seq` | yes | Authority |
 | `missing_keywrap_digest` | 422 | `PUT …/keywraps` | `epoch` | yes | Keys |
 | `no_live_grant` | 403 | device routes | `index` where per-op, `revoked` | no | Authority |
@@ -109,7 +109,7 @@ Every refusal has the shape `{"detail": {"code": …, …extra fields…}}`. On
 | `role_forbids_prune_type` | 403 | `POST …/ops` `0x81` | `index`, `prune_type`, `roles` | no | Authority |
 | `rotate_epoch_conflict` | 409 | `POST …/ops` rotate | `index`, `from_epoch`, `expected_from_epoch` | no | Keys |
 | `rotate_not_materialised` | 409 | `PUT …/keywraps` | `epoch` | no | Keys |
-| `store_unavailable` | 503 | `GET /health/db` | — | no | Compat |
+| `store_unavailable` | 503 | any route — `GET /health/db` is where you ask for it | — | no | Compat |
 | `truncated_envelope` | 422 | `POST …/ops` | `index` | yes | Log |
 | `unknown_delegation` | 422 | `POST …/ops` revoke_delegation | `index` | no | Authority |
 | `unknown_grant` | 422 | `POST …/ops` revoke | `index` | no | Authority |
@@ -140,8 +140,13 @@ server uses, so the vocabulary stays closed even though the gate is not specifie
 names **paths**: dot-separated from the request body, decimal indices for array
 positions, a query parameter as a single segment; every offending one, sorted
 lexicographically ([Compat §4](../05-compatibility.md#4-unknown-fields-are-refused)).
-Under `malformed_request` that is the duplicated key, or the parameter whose value is
-out of range.
+Under `malformed_request` that is the duplicated key, the parameter whose value is
+out of range, or a **required member omitted from a body object** — `key_ids.<name>`
+on the one object that has any ([Identity §4](../02-identity.md#4-how-a-device-gets-a-credential)).
+
+**[S]** The `roles` array carried by `role_forbids_op_class` and
+`role_forbids_prune_type` is likewise **sorted lexicographically**
+([Authority §9](../03-authority.md#9-stage-2--permission-checks-on-ordinary-ops)).
 
 ## Client codes
 
@@ -153,7 +158,7 @@ it.
 |---|---|---|
 | `bad_signature` | the envelope's signature does not verify | Log |
 | `aead_failure` | the body did not open under the epoch key | Keys |
-| `plaintext_at_encrypted_epoch` | unsealed content at an epoch the reader has a key for | Keys |
+| `plaintext_at_encrypted_epoch` | unsealed content at a log position after the Workspace's first `rotate` — or at any position, where epoch 0 is keyed | Keys |
 
 ## Signal close codes
 
@@ -175,6 +180,7 @@ client's response is identical either way.
 | `unknown_grant` vs `unknown_grantee` | a failed revocation is not an invalid grantee |
 | `unknown_delegation` vs `unknown_grant` | different objects, different remedies |
 | `key_epoch_stale` vs `key_epoch_unknown` | too old is a catch-up; too new is an impossible epoch |
+| `ext_class_not_enabled` vs `unsupported_op_class` | *that class is not turned on here* versus *this op's own class is not served* |
 | `encrypted_control_op` vs `encrypted_prune_op` | different remedies |
 | `prune_target_is_control` vs `prune_target_is_prune` | different reasons for exemption |
 | `bad_vault_signature` vs `vault_version_regression` | *you do not control this slot* is terminal; *you are behind* is a re-read |
