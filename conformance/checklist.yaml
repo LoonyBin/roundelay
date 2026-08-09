@@ -100,14 +100,31 @@ items:
   codes: [malformed_request]
   test: tests/conformance/test_scalars.py::test_scalar_types
 
+- id: CONF-VER-009
+  requirement: >
+    No functional route is added to a contract version already served: the served route
+    table under /v1 is exactly the functional routes the five layers define, with
+    /health and /health/db outside the prefix and no route beyond that set reachable
+    there. A route the deployment adds later is served under a new contract version,
+    which contract_versions then lists beside the old one.
+  spec: "docs/05-compatibility.md §3"
+  subject: server
+  observable: white-box
+  codes: []
+  test: tests/conformance/test_versioning.py::test_no_routes_added_to_served_version
+
 # ── Health ───────────────────────────────────────────────────────────────────
 
 - id: CONF-HEALTH-001
   requirement: >
     GET /health returns status, a non-empty version, contract_versions ascending,
-    protocol_namespace, profile, extension_classes, and the four required limits
-    keys. extension_classes is always present — {} where none are enabled, never
-    absent — and its keys are decimal JSON strings with no leading zeros.
+    protocol_namespace, profile, extension_classes, served_sets and the four required
+    limits keys. extension_classes is always present — {} where none are enabled, never
+    absent — and its keys are decimal JSON strings with no leading zeros. served_sets is
+    always present and carries all four of suites, op_classes, control_types and
+    prune_types: suites and op_classes are JSON integers in decimal and ascending,
+    control_types and prune_types are strings sorted lexicographically, and no set is
+    spelled the other way round.
   spec: "docs/05-compatibility.md §7"
   subject: server
   observable: black-box
@@ -152,6 +169,33 @@ items:
   observable: black-box
   codes: [store_unavailable]
   test: tests/conformance/test_health.py::test_outage_on_functional_route
+
+- id: CONF-HEALTH-006
+  requirement: >
+    served_sets is truthful in both directions, tested against the four fail-closed
+    codes: every suite it lists is accepted on some op and a suite byte it omits is
+    refused unsupported_suite; every class it lists is accepted and a class byte it
+    omits is refused unsupported_op_class; every control type it lists is served and one
+    it omits is refused unsupported_control_type; every prune type it lists is served
+    and one it omits is refused unsupported_prune_type.
+  spec: "docs/05-compatibility.md §7"
+  subject: server
+  observable: black-box
+  codes: [unsupported_suite, unsupported_op_class, unsupported_control_type, unsupported_prune_type]
+  test: tests/conformance/test_health.py::test_served_sets_are_truthful
+
+- id: CONF-HEALTH-007
+  requirement: >
+    served_sets.op_classes is every class byte the server accepts, across all three
+    ranges: every key of extension_classes appears in it as the same value spelled as an
+    integer — the key "197" against the element 197 — and so does every opaque class the
+    profile declares in 0x40-0x7F, which carries no NAME and appears in no
+    extension_classes entry. The two fields never disagree about a class either names.
+  spec: "docs/05-compatibility.md §5, §7"
+  subject: server
+  observable: black-box
+  codes: []
+  test: tests/conformance/test_health.py::test_op_classes_covers_all_three_ranges
 
 # ── Wire format ──────────────────────────────────────────────────────────────
 
@@ -236,8 +280,8 @@ items:
 - id: CONF-WIRE-008
   requirement: >
     Signature preimages are length-prefixed: framed(domain, rest) = u8 len(domain) ||
-    domain || rest, asserted against frozen vectors for all thirteen fixed core
-    domains. Those thirteen are the whole of the core set: an envelope of any class
+    domain || rest, asserted against frozen vectors for all fifteen fixed core
+    domains. Those fifteen are the whole of the core set: an envelope of any class
     below 0xC0 frames under <ns>/op/v1, while an extension-class op frames under
     <ns>/ext/<name>/v1 instead and is vectored per profile by CONF-WIRE-022.
   spec: "docs/04-keys.md §2"
@@ -395,13 +439,27 @@ items:
   requirement: >
     The profile holds one frozen preimage vector per enabled extension NAME, framing
     that class's envelopes under <ns>/ext/<name>/v1. Enabling any number of extensions
-    leaves the thirteen fixed core vectors byte-identical, and two enabled names never
+    leaves the fifteen fixed core vectors byte-identical, and two enabled names never
     share a domain.
   spec: "docs/04-keys.md §2"
   subject: profile
   observable: white-box
   codes: []
   test: tests/conformance/test_domains.py::test_extension_domain_vectors
+
+- id: CONF-WIRE-023
+  requirement: >
+    Both selector bytes resolve before the floor. An envelope at least 158 bytes long
+    whose suite byte this server does not serve, and whose total length is below every
+    served suite's floor, answers unsupported_suite and never envelope_too_short; one
+    whose class byte is unserved under the same two conditions answers
+    unsupported_op_class and never envelope_too_short. An envelope under 158 bytes still
+    answers truncated_envelope whichever selector bytes it would have carried.
+  spec: "docs/01-the-log.md §6"
+  subject: server
+  observable: black-box
+  codes: [unsupported_suite, unsupported_op_class, envelope_too_short, truncated_envelope]
+  test: tests/conformance/test_wire.py::test_selectors_precede_the_floor
 
 # ── Credentials ──────────────────────────────────────────────────────────────
 
@@ -872,12 +930,13 @@ items:
 
 - id: CONF-LOG-009
   requirement: >
-    All four replay exemptions hold: a replayed grant, revoke, prune and control op
-    each answer duplicate=true rather than their conflict codes.
-  spec: "docs/01-the-log.md"
+    All five replay exemptions hold: a replayed grant, revoke, amend, prune (either
+    soft type) and control op each answer duplicate=true rather than their conflict
+    codes.
+  spec: "docs/01-the-log.md, docs/03-authority.md §12"
   subject: server
   observable: black-box
-  codes: [grant_id_already_used, already_revoked, prune_target_already_reprised]
+  codes: [grant_id_already_used, already_revoked, amend_id_already_used, prune_target_already_reprised]
   test: tests/conformance/test_oplog.py::test_replay_exemptions
 
 - id: CONF-LOG-010
@@ -1156,6 +1215,68 @@ items:
   codes: [control_chain_break, workspace_not_created]
   test: tests/conformance/test_control.py::test_pregenesis_chain_check
 
+- id: CONF-CTL-018
+  requirement: >
+    A role_table is signed by the current Root itself: one Root signed is accepted from
+    an author holding no grant at all, since a Root-signed control payload needs none,
+    and one a live delegate signed is refused 422 bad_root_signature — the same verdict
+    delegate, revoke_delegation, workspace_genesis and root_handover give.
+  spec: "docs/03-authority.md §6, §7"
+  subject: server
+  observable: black-box
+  codes: [bad_root_signature]
+  test: tests/conformance/test_control.py::test_role_table_is_root_only
+
+- id: CONF-CTL-019
+  requirement: >
+    Every malformed_role_table case is decided from the certificate's own bytes and sits
+    above the signature, so a table that is both misshapen and signed by the wrong key
+    answers malformed_role_table and never bad_root_signature: an entry whose key set is
+    not the closed three, a role token failing ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ or
+    outside 1-32 bytes, a repeated role token, a classes member that is not an integer
+    in 0-255 or is repeated, a prune_types member outside {prune, prune_ext, hard_prune}
+    or repeated, a non-empty prune_types on an entry whose classes does not name 129,
+    a table without exactly one entry named owner, and an entry other than owner naming
+    128. cert_workspace_mismatch still precedes it.
+  spec: "docs/03-authority.md §10"
+  subject: server
+  observable: black-box
+  codes: [malformed_role_table, cert_workspace_mismatch, bad_root_signature]
+  test: tests/conformance/test_control.py::test_role_table_shape_rules
+
+- id: CONF-CTL-020
+  requirement: >
+    The table in force at a position is the one carried by the latest role_table op
+    strictly below it, and the profile's initial table where there is none: within one
+    batch, an op after a role_table is judged against the table that role_table carries,
+    and an op accepted before a narrowing role_table is never retroactively refused — it
+    stays in the log and serves unchanged. A role a later table stops naming leaves its
+    grants live and unrevoked, while later ops from a device holding one answer 403
+    role_forbids_op_class carrying that token among the lexicographically sorted roles,
+    never unknown_role.
+  spec: "docs/03-authority.md §7, §11"
+  subject: server
+  observable: black-box
+  codes: [role_forbids_op_class, unknown_role]
+  test: tests/conformance/test_control.py::test_role_table_in_force_is_positional
+
+- id: CONF-CTL-021
+  requirement: >
+    member_amend refusals fire in this order, each shown to precede the next by an op
+    faulty in both ways: cert_workspace_mismatch, cert_member_mismatch where the
+    certificate names a device other than the envelope's author, bad_root_signature —
+    verified under root authority at the op's own position, so a live delegate's
+    signature passes — then 409 amend_id_already_used where a different op already used
+    that amend id. An empty keys object, a member outside {control, content, kex}, and a
+    key_id that is not the derivation of the pk beside it are malformed_control_payload
+    above the whole sequence. A byte-identical repeat of an accepted amend answers
+    duplicate=true and never amend_id_already_used.
+  spec: "docs/03-authority.md §10, §12"
+  subject: server
+  observable: black-box
+  codes: [cert_workspace_mismatch, cert_member_mismatch, bad_root_signature, amend_id_already_used, malformed_control_payload]
+  test: tests/conformance/test_control.py::test_member_amend_ordering
+
 # ── Prune ops ────────────────────────────────────────────────────────────────
 
 - id: CONF-PRUNE-001
@@ -1180,9 +1301,11 @@ items:
 
 - id: CONF-PRUNE-003
   requirement: >
-    Target cross-checks are refused per target: missing, control, prune, any other
-    bit-7 class, mismatched attestation, already reprised, and self-reference.
-  spec: "docs/01-the-log.md"
+    On a prune, target cross-checks are refused per target in payload order: missing,
+    control, prune, any other bit-7 class — extension classes included, since only a
+    prune_ext reaches those — mismatched attestation, already reprised, and
+    self-reference.
+  spec: "docs/01-the-log.md §7"
   subject: server
   observable: black-box
   codes: [prune_target_not_found, prune_target_is_control, prune_target_is_prune, prune_target_is_server_read, prune_target_attestation_mismatch, prune_target_already_reprised, prune_target_is_its_own_reprise]
@@ -1218,6 +1341,122 @@ items:
   observable: black-box
   codes: [prune_target_attestation_mismatch]
   test: tests/conformance/test_prune.py::test_attestation_construction
+
+- id: CONF-PRUNE-007
+  requirement: >
+    prune_ext shape rules are refused at decode, all malformed_prune_payload: a missing
+    op_class or name, an op_class outside 192-255 or spelled as a hex string rather than
+    a JSON integer, a name failing ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ or outside 1-32
+    bytes, and any unrecognised key — a reprise among them, which a prune_ext never
+    carries and never has resolved, so prune_reprise_not_found cannot arise on one. The
+    three target shape rules bind identically:
+    prune_targets_empty for no target, prune_duplicate_target for a duplicate by seq and
+    for one by (author, author_seq), and prune_targets_too_many above 1000.
+  spec: "docs/01-the-log.md §7"
+  subject: server
+  observable: black-box
+  codes: [malformed_prune_payload, prune_targets_empty, prune_duplicate_target, prune_targets_too_many]
+  test: tests/conformance/test_prune.py::test_prune_ext_shape_rules
+
+- id: CONF-PRUNE-008
+  requirement: >
+    On a prune_ext the per-target refusals fire in payload order and in this order, each
+    shown to precede the next by a target faulty in both ways: prune_target_not_found,
+    prune_target_is_control, prune_target_is_prune, prune_target_is_server_read,
+    prune_ext_wrong_class carrying seq, prune_target_attestation_mismatch,
+    prune_ext_name_mismatch carrying seq and expected, prune_target_already_reprised.
+    Both seams hold: a 0xBF target answers prune_target_is_server_read and never
+    prune_ext_wrong_class, and a target whose envelope_hash and whose name in force are
+    both wrong answers prune_target_attestation_mismatch. prune_ext_wrong_class catches
+    both directions — another extension class than the one named, and an opaque class —
+    and prune_target_is_its_own_reprise never arises here.
+  spec: "docs/01-the-log.md §7"
+  subject: server
+  observable: black-box
+  codes: [prune_target_not_found, prune_target_is_control, prune_target_is_prune, prune_target_is_server_read, prune_ext_wrong_class, prune_target_attestation_mismatch, prune_ext_name_mismatch, prune_target_already_reprised]
+  test: tests/conformance/test_prune.py::test_prune_ext_target_order
+
+- id: CONF-PRUNE-009
+  requirement: >
+    The name check is positional and per target, read from the target's author's binding
+    interval at the target's own position. Against the log [1 ext_binding 0xCC bind
+    "purge", 2 an 0xCC op, 3 ext_binding 0xCC unbind, 4 ext_binding 0xCC bind "copy",
+    5 an 0xCC op]: prune_ext{op_class 204, name "purge", targets [2]} is accepted;
+    prune_ext{op_class 204, name "copy", targets [2]} is refused prune_ext_name_mismatch
+    carrying seq 2 and expected "purge"; and prune_ext{op_class 204, name "purge",
+    targets [2, 5]} is refused at seq 5 with expected "copy". expected is the NAME in
+    force there, never the one the server implements now.
+  spec: "docs/01-the-log.md §7"
+  subject: server
+  observable: black-box
+  codes: [prune_ext_name_mismatch]
+  test: tests/conformance/test_prune.py::test_prune_ext_name_is_positional
+
+- id: CONF-PRUNE-010
+  requirement: >
+    The author of a prune_ext needs no binding of its own for the class it names, and
+    the absence of one is never checked: a member holding the role and no ext_binding
+    for that class, which never held one, folds another member's ops of it. It still
+    folds them after the deployment has stopped implementing the class, when a fresh
+    bind of that class answers ext_class_not_enabled — op_class is judged for range
+    alone, never against the configuration.
+  spec: "docs/01-the-log.md §7"
+  subject: server
+  observable: black-box
+  codes: [ext_class_not_enabled]
+  test: tests/conformance/test_prune.py::test_prune_ext_needs_no_binding
+
+- id: CONF-PRUNE-011
+  requirement: >
+    A role entry naming bare 0x81 confers prune and refuses a prune_ext 403
+    role_forbids_prune_type, carrying prune_type "prune_ext" and the live roles sorted
+    lexicographically; an entry naming prune_ext explicitly authors one. The verdict
+    lands after the shape rules, not before them: a prune_ext with empty targets from
+    that same bare-0x81 role answers prune_targets_empty, never role_forbids_prune_type.
+  spec: "docs/01-the-log.md §7, docs/03-authority.md §7"
+  subject: server
+  observable: black-box
+  codes: [role_forbids_prune_type, prune_targets_empty]
+  test: tests/conformance/test_prune.py::test_prune_ext_role_gating
+
+- id: CONF-PRUNE-012
+  requirement: >
+    An accepted prune_ext marks each target reprised in the one sense that state has:
+    the target is hidden from the default read, served byte-identically under
+    include_reprised=true, and recorded with the position of the op that marked it. A
+    hard_prune then destroys its bytes, carrying no op_class and no name of its own. An
+    extension-class op no prune_ext has marked is refused hard_prune_target_not_reprised,
+    and a 0xBF op answers that same code for ever, since no type ever marks one.
+  spec: "docs/01-the-log.md §7"
+  subject: server
+  observable: black-box
+  codes: [hard_prune_target_not_reprised]
+  test: tests/conformance/test_prune.py::test_prune_ext_mark_composes_with_hard_prune
+
+- id: CONF-PRUNE-013
+  requirement: >
+    A prune_ext op is itself an 0x81 op and so the target of nothing: naming one in a
+    prune or in a prune_ext answers prune_target_is_prune, and naming one in a
+    hard_prune answers hard_prune_target_is_prune — so its per-target envelope_hash
+    outlives the ops it folded.
+  spec: "docs/01-the-log.md §7"
+  subject: server
+  observable: black-box
+  codes: [prune_target_is_prune, hard_prune_target_is_prune]
+  test: tests/conformance/test_prune.py::test_prune_ext_is_never_a_target
+
+- id: CONF-PRUNE-014
+  requirement: >
+    A client authoring a prune_ext takes name from the log — the target's author's
+    binding interval at the target's position — and from nowhere else. Where its own
+    live binding for that class, the extension_classes entry on GET /health, and the
+    NAME in force at the target's position all differ, the payload it posts carries the
+    value read from the log.
+  spec: "docs/01-the-log.md §7"
+  subject: client
+  observable: black-box
+  codes: []
+  test: tests/conformance/client/test_extensions.py::test_prune_ext_name_from_the_log
 
 # ── Append effects ───────────────────────────────────────────────────────────
 
@@ -1266,6 +1505,19 @@ items:
   observable: black-box
   codes: []
   test: tests/conformance/test_keyplane.py::test_rotate_creates_empty_epoch
+
+- id: CONF-EFFECT-006
+  requirement: >
+    An accepted member_amend naming control runs the revoke cascade without the grant
+    half, at the commit: every refresh token scoped to that device is revoked and every
+    live signal socket it holds in this Workspace closes with 4403, while its grants
+    stay live. An amend naming only content, or only kex, does neither — the device's
+    refresh token still refreshes and its socket stays open.
+  spec: "docs/03-authority.md §10, §11"
+  subject: server
+  observable: black-box
+  codes: [invalid_refresh_token, "4403"]
+  test: tests/conformance/test_effects.py::test_control_amend_cascade
 
 # ── Signal socket ────────────────────────────────────────────────────────────
 
@@ -1711,8 +1963,8 @@ items:
 - id: CONF-HARD-001
   requirement: >
     A 0x81 payload with no type, or an unrecognised type, is refused
-    malformed_prune_payload and unsupported_prune_type respectively; both v1 types
-    are accepted.
+    malformed_prune_payload and unsupported_prune_type respectively; all three v1
+    types — prune, prune_ext and hard_prune — are accepted.
   spec: "docs/01-the-log.md"
   subject: server
   observable: black-box
@@ -1735,7 +1987,10 @@ items:
     A hard_prune naming a 0x81 op is refused hard_prune_target_is_prune even though
     that target is necessarily not marked reprised — rule 3 runs before rule 4, which
     is the only reason the code is reachable — so the hashes that let a verifier chain
-    past an existing hole always survive.
+    past an existing hole always survive. Rule 3 excludes 0x81 targets and not
+    extension-class ones: an op in 0xC0-0xFF that a landed prune_ext marked reprised
+    passes rule 3 and is destroyed, while 0x80 and 0xBF stay unreachable through rule 4
+    for ever, since no type ever marks one.
   spec: "docs/01-the-log.md §7"
   subject: server
   observable: black-box
@@ -1856,6 +2111,18 @@ items:
   codes: [member_quota_exhausted]
   test: tests/conformance/test_quota.py::test_per_member_bound_is_distinct
 
+- id: CONF-QUOTA-006
+  requirement: >
+    The 0x81 exemption is stated on the class, so it covers every payload type: with
+    writes refused workspace_quota_exhausted, a batch containing only prune_ext ops is
+    accepted, exactly as one containing only prune ops and one containing only
+    hard_prune ops are.
+  spec: "docs/01-the-log.md §11"
+  subject: server
+  observable: black-box
+  codes: [workspace_quota_exhausted]
+  test: tests/conformance/test_quota.py::test_prune_ext_is_exempt
+
 # ── Profile ──────────────────────────────────────────────────────────────────
 
 - id: CONF-PROF-001
@@ -1878,10 +2145,15 @@ items:
 
 - id: CONF-PROF-003
   requirement: >
-    Under a derived creation policy, workspace ids are UUID-v5 over the frozen
-    namespaces with the 32 raw bytes of the founding Root public key, asserted
-    against frozen vectors.
-  spec: "docs/03-authority.md"
+    Under a derived creation policy a Workspace id is uuid8(NS, root_pk): the first 16
+    bytes of SHA-256 over the 16 namespace bytes concatenated with the 32 raw bytes of
+    the founding Root public key, with octet 6 replaced by 0x80 | (octet 6 & 0x0F) and
+    octet 8 by 0x80 | (octet 8 & 0x3F) — never SHA-1, never a hex or base64 spelling of
+    the key — asserted against frozen vectors. A genesis naming an id derived any other
+    way answers 403 workspace_not_reachable, and the namespaces are frozen literals in
+    the profile rather than values recomputed at startup, so one (root_pk, id) pair
+    answers identically across a restart.
+  spec: "docs/03-authority.md §3.1"
   subject: profile
   observable: black-box
   codes: [workspace_not_reachable]
@@ -1905,6 +2177,18 @@ items:
   observable: white-box
   codes: []
   test: tests/conformance/test_profile.py::test_holder_ref_derivation_declared
+
+- id: CONF-PROF-006
+  requirement: >
+    Every role token in the profile's initial table matches
+    ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ and is 1-32 bytes — the protocol's one token shape,
+    and the shape a role_table certificate is held to — so no initial table names a role
+    an in-band replacement could not carry.
+  spec: "docs/03-authority.md §7, §10"
+  subject: profile
+  observable: white-box
+  codes: []
+  test: tests/conformance/test_profile.py::test_initial_role_tokens_match_pattern
 
 # ── Client obligations ───────────────────────────────────────────────────────
 
@@ -1977,12 +2261,28 @@ items:
   test: tests/conformance/client/test_verification.py::test_history_view_not_durable
 
 - id: CONF-CLI-004
-  requirement: A client verifies author_key_id against the key learned from that Member's registration.
-  spec: "docs/01-the-log.md"
+  requirement: >
+    A client verifies author_key_id against the key in force for that Member at the op's
+    own position — the one its registration named, until a member_amend replaces it.
+  spec: "docs/01-the-log.md, docs/03-authority.md §10"
   subject: client
   observable: white-box
   codes: []
   test: tests/conformance/client/test_verification.py::test_key_id_checked
+
+- id: CONF-CLI-026
+  requirement: >
+    Key replacement is positional in both directions for a reader. Given a
+    member_amend{control} at seq 13, the client verifies that device's bit-7-set
+    envelopes below 13 under the replaced control key and those above 13 under the new
+    one, and refuses neither. An author_key_id that resolves to no key in force for that
+    device at that op's position is refused unknown_author_key — the op is not
+    authentic, and the code is never folded into bad_signature.
+  spec: "docs/03-authority.md §10"
+  subject: client
+  observable: white-box
+  codes: [unknown_author_key, bad_signature]
+  test: tests/conformance/client/test_verification.py::test_key_resolution_is_positional
 
 - id: CONF-CLI-005
   requirement: >
@@ -2007,6 +2307,19 @@ items:
   observable: white-box
   codes: [plaintext_at_encrypted_epoch, aead_failure]
   test: tests/conformance/client/test_suites.py::test_downgrade_and_aead
+
+- id: CONF-CLI-028
+  requirement: >
+    A client refuses a pulled envelope whose suite byte it does not serve before
+    trusting any offset beyond the two selector bytes: the body geometry and the
+    signature length are the suite's, so it computes no body boundary, no envelope hash
+    and no signature verdict for such an envelope, and keeps the bytes rather than
+    discarding them.
+  spec: "docs/05-compatibility.md §5, docs/01-the-log.md §2"
+  subject: client
+  observable: white-box
+  codes: []
+  test: tests/conformance/client/test_suites.py::test_unserved_suite_refused_before_offsets
 
 - id: CONF-CLI-007
   requirement: >
@@ -2041,6 +2354,33 @@ items:
   observable: black-box
   codes: [control_chain_break]
   test: tests/conformance/client/test_control.py::test_rebuild_re_reads_the_log
+
+- id: CONF-CLI-024
+  requirement: >
+    A reader replaying the control log that meets a load-bearing control type it does
+    not serve stops deriving authority at that position and does not skip it: everything
+    derived below stands, and no authority-dependent verdict — a grant, a revocation, a
+    delegation, the current Root — is produced for any later position. The condition is
+    surfaced as control_type_not_served, the op's chain link is still verified so the
+    reader knows where it stopped, and nothing is refetched or quarantined.
+  spec: "docs/03-authority.md §4"
+  subject: client
+  observable: white-box
+  codes: [control_type_not_served]
+  test: tests/conformance/client/test_control.py::test_unserved_control_type_halts
+
+- id: CONF-CLI-025
+  requirement: >
+    A reader that meets a control type it does not serve whose name begins note_
+    hash-chains past it without interpreting it: it derives nothing from the payload,
+    reads no field of it but the mandatory type, produces authority verdicts for every
+    later position as though the op carried none, and raises no
+    control_type_not_served.
+  spec: "docs/03-authority.md §4"
+  subject: client
+  observable: white-box
+  codes: []
+  test: tests/conformance/client/test_control.py::test_advisory_type_chained_past
 
 - id: CONF-CLI-008
   requirement: >
@@ -2080,6 +2420,18 @@ items:
   observable: white-box
   codes: []
   test: tests/conformance/client/test_codes.py::test_unknown_code_surfaced
+
+- id: CONF-CLI-027
+  requirement: >
+    A client tolerates unrecognised response members at any nesting depth, including
+    inside a refusal detail object beside a code it does know: it proceeds exactly as it
+    proceeds against the same response without them, refusing neither the response nor
+    the refusal, and no later request it sends carries any of those members back.
+  spec: "docs/05-compatibility.md §4"
+  subject: client
+  observable: black-box
+  codes: []
+  test: tests/conformance/client/test_codes.py::test_unknown_response_members_tolerated
 
 - id: CONF-CLI-012
   requirement: >
@@ -2260,9 +2612,9 @@ items:
 
 - id: CONF-DELG-003
   requirement: >
-    A workspace_genesis, root_handover or vault write signed by a live delegate is
-    refused; only Root itself is accepted for those three.
-  spec: "docs/03-authority.md"
+    A workspace_genesis, root_handover, role_table or vault write signed by a live
+    delegate is refused; only Root itself is accepted for those four.
+  spec: "docs/03-authority.md §6"
   subject: server
   observable: black-box
   codes: [bad_root_signature, bad_vault_signature]
