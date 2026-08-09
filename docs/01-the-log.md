@@ -114,8 +114,9 @@ for any op it hides (§3, rule 5).
 > every other one is ([Keys](04-keys.md#the-framing-rule)). Framing stops a signature
 > over one document being replayed as a signature over another. This hash
 > **identifies bytes; it does not authenticate them** — the authentication is the
-> signature *inside* the very bytes being hashed, already framed under the `op`
-> domain, and prefixing the digest input would add nothing to it. It is also the
+> signature *inside* the very bytes being hashed, already framed under its own
+> signing domain (§3, rule 2 for an extension class; `op` for every other), and
+> prefixing the digest input would add nothing to it. It is also the
 > precedent `prev_control_hash` already set: bare SHA-256 over the bytes it names
 > ([Authority](03-authority.md#the-control-chain)).
 
@@ -129,6 +130,15 @@ Inside the body, before any encryption:
   │   4 bytes  │     N bytes         │  up to a size class  │
   └────────────┴─────────────────────┴──────────────────────┘
 ```
+
+**[W]** `payload_len` is an unsigned 32-bit **big-endian** integer.
+
+> Stated here because the body is the one place the convention was not already
+> stated. The header declares it for its own fields (§2), and the framing rule
+> declares it for every framed construction
+> ([Keys](04-keys.md#the-framing-rule)); the body is neither, so this prefix fell
+> between the two — four bytes whose reading two implementations could disagree
+> about, on every op in the log.
 
 **[P]** Bodies are padded up to the nearest **size class** — a short ladder of
 fixed lengths declared by the profile — or, above the largest, to the next
@@ -300,7 +310,8 @@ server-read classes here for behaviour the core did not anticipate.
 > here. Unverifiable is not.
 
 **[S]** A server MUST advertise the extension classes it implements in its served
-sets. **[S]** A server that implements none MUST behave exactly as though the
+sets — the `extension_classes` field of `GET /health`
+([Compatibility §7](05-compatibility.md#7-discovery-the-health-endpoints)). **[S]** A server that implements none MUST behave exactly as though the
 range were unassigned, and MUST pass the whole conformance suite with ops of an
 unknown extension class present in the log.
 
@@ -599,17 +610,25 @@ partial success.
 earlier ops in the same batch are visible to later ones.
 
 ```
-  POST { ops: [ genesis, register, grant, content ] }
-                  │        │         │        │
-                  │        │         │        └─ authorised by the grant at index 2
-                  │        │         └─ needs the registration at index 1
-                  │        └─ needs the Workspace created at index 0
-                  └─ creates the Workspace
+  POST { ops: [ genesis, grant, content ] }
+                  │        │        │
+                  │        │        └─ authorised by the grant at index 1
+                  │        └─ a Root-signed self-grant; needs the Workspace
+                  │           created at index 0
+                  └─ creates the Workspace, and registers its founder
 ```
 
 > This is what lets a brand-new device post its entire enrolment as one request.
-> The alternative — four round trips, each depending on the last — is four chances
-> to be interrupted halfway.
+> The alternative — three round trips, each depending on the last — is three
+> chances to be interrupted halfway.
+
+**[S]** Every op in a batch has the same author — the token's device, and stage 1
+refuses any other (`author_member_mismatch`). So a batch is one device's enrolment
+and never two, which is why no `member_register` appears above: the founder writes
+none, because the genesis certificate embeds its own
+([Authority](03-authority.md#genesis-carries-its-own-founders-registration)). And
+the grant is Root-signed because nothing else would land: the founder holds no
+grant at index 1, and a `0x80` op that is not Root-signed requires `owner`.
 
 ### The pipeline
 
@@ -659,6 +678,28 @@ batch. Stage 5 runs once every op has passed 2–4.
 > targets, content op with no permission]` answers about index 0; a batch of
 > `[content op with no permission, unparseable base64]` answers about index 1,
 > because stage 1 is a complete pass.
+
+**[S]** **Stage 0 is drawn above stage 1, and one of its two questions cannot be
+answered there.** The access gate exempts an author's **first op** in a Workspace
+([Authority](03-authority.md#the-one-carve-out)) — and whether the batch's first op
+*is* that op is a fact about its class, its payload type and its certificate, none
+of which stage 0 has read. An implementation therefore defers the `no_registration`
+verdict until it knows.
+
+**[S]** Only the verdict is protocol. An unregistered device posting a batch whose
+first op does not register it answers `403 no_registration`; one whose first op does
+proceeds.
+
+```
+   [ member_register(author) , content ]   ✓  the exemption applies
+   [ content , member_register(author) ]   ✗  403 no_registration
+```
+
+> Where the check *runs* is an implementation's business, as everywhere else here.
+> What is observable is the code and the fact that it names no op, and both hold
+> whichever way round it is built. The alternative — a gate that answers before the
+> class is known — has no answer at all for the enrolling device, which is the case
+> the exemption exists for.
 
 ### Stage 0 and 1 refusals
 
@@ -946,18 +987,29 @@ in both. Four things depend on the tombstone surviving:
 
 | # | Rule | Refusal |
 |---|---|---|
-| 1 | the position exists — some op was stored there | `prune_target_not_found` |
-| 2 | the target is not itself a `0x81` op | `hard_prune_target_is_prune` |
-| 3 | the target is already marked reprised | `hard_prune_target_not_reprised` |
-| 4 | `envelope_hash` matches what is held at that `seq` — the stored bytes, or the tombstone's hash where they are gone | `prune_target_attestation_mismatch` |
-| 5 | the shape rules of the prune payload, unchanged | `prune_targets_empty`, `prune_duplicate_target`, `prune_targets_too_many` |
+| 1 | the shape rules of the prune payload, unchanged | `prune_targets_empty`, `prune_duplicate_target`, `prune_targets_too_many` |
+| 2 | the position exists — some op was stored there | `prune_target_not_found` |
+| 3 | the target is not itself a `0x81` op | `hard_prune_target_is_prune` |
+| 4 | the target is already marked reprised | `hard_prune_target_not_reprised` |
+| 5 | `envelope_hash` matches what is held at that `seq` — the stored bytes, or the tombstone's hash where they are gone | `prune_target_attestation_mismatch` |
 
-> The order is not free, and rule 2 has to precede rule 3. A soft prune refuses a `0x81`
-> target of its own (stage 3), so no prune op is ever marked reprised: ask about the mark
-> first and every prune target answers *you skipped a step*, while rule 2 never fires at
-> all. Nothing is bought by that ordering either — the class is one byte of a header the
-> server holds under both rules — and asking it first is what keeps *this would destroy
-> the evidence* a verdict of its own rather than one a client meets by accident.
+**[S]** Rule 1 is asked of the payload; rules 2 to 5 are asked of each target in
+payload order. The role table's `hard_prune` verdict falls between them — stage 3
+below places it.
+
+> The order is not free in two places.
+>
+> **Shape leads**, because rules 2 to 5 walk a target set and rule 1 is what says
+> there is one to walk. It is also the order a soft prune already runs (stage 3), and
+> the order duplicates are refused in at all: refused at decode, so that a later
+> rowcount has exactly one remaining explanation.
+>
+> And **rule 3 has to precede rule 4.** A soft prune refuses a `0x81` target of its own
+> (stage 3), so no prune op is ever marked reprised: ask about the mark first and every
+> prune target answers *you skipped a step*, while rule 3 never fires at all. Nothing is
+> bought by that ordering either — the class is one byte of a header the server holds
+> under both rules — and asking it first is what keeps *this would destroy the evidence*
+> a verdict of its own rather than one a client meets by accident.
 
 **[S]** *Never assigned* and *already gone* are **different verdicts**. A `seq` no
 op was ever stored at is `prune_target_not_found` — the same code a soft prune
@@ -984,7 +1036,7 @@ absent from the page, and the `hard_prune` that removed it is in the log.
 
 #### Why prune ops may never be targets
 
-**[W]** Rule 2 is not tidiness. A soft prune carries `envelope_hash` for every op it
+**[W]** Rule 3 is not tidiness. A soft prune carries `envelope_hash` for every op it
 marks, and that hash is *the only thing* that lets a verifier chain past the hole it
 created, above. Destroy the prune and every hole it authorised becomes unexplainable:
 a reader meets a gap in an author's chain with nothing to bridge it and no signed
@@ -1154,13 +1206,16 @@ decoding plus the transition window in (4) already covers.
 
 ### Stage 3 — what the server checks
 
-**[S]** In order, all `422` with `index`:
+**[S]** In order, `422` with `index` unless noted:
 
 1. framing: `invalid_body_length`, `payload_overruns_body`, `non_zero_padding`
 2. shape: `malformed_prune_payload` and the three rules above
-3. `prune_reprise_not_found` — the named reprise is neither earlier in this
-   batch nor already stored **under this same author**
-4. per target, in payload order:
+3. `403 role_forbids_prune_type` — the author's role confers `0x81` but not this
+   payload's `type` ([Authority](03-authority.md), role rule 5)
+4. `prune_reprise_not_found` — the named reprise is neither earlier in this
+   batch nor already stored **under this same author**. `prune` only: a
+   `hard_prune` names none
+5. per target, in payload order:
 
 | Refusal | Cause |
 |---|---|
@@ -1188,6 +1243,22 @@ already commits them to.
 > Checking attestations at the door is the entire argument for the server reading
 > this payload: a forged one poisons chain verification for every device that
 > enrols later, and such a device has nothing to check it against.
+
+**[S]** On a `hard_prune` the two sequences are one sequence: step 2 is rule 1 of the
+five-rule table above, and step 5 is its rules 2 to 5.
+
+> **Why step 3 sits here rather than in stage 2.** The role table is consulted per
+> **class**, and stage 2 does that for every op — but `0x81` is one class carrying two
+> payload types, and the `type` that role rule 5 turns on lives in the **body**.
+> Nothing reads a body before stage 3. So the class-level verdict stays where every
+> other one is, and the type-level verdict lands at the first point the type is known.
+>
+> **And after the shape rules, not before them**, on the discipline this layer keeps
+> throughout: shape asks whether the payload is a well-formed statement at all,
+> authority asks whether this author may make it, and the second question is only
+> worth putting to something that parsed. So a `hard_prune` with empty targets from a
+> role holding bare `0x81` answers `prune_targets_empty`, never
+> `role_forbids_prune_type`.
 
 ---
 
@@ -1500,6 +1571,15 @@ because the remedy is a different one and belongs to a different person.
 > Collapsing the two would tell two hundred people the Workspace is out of space when
 > one runaway sync loop is the whole problem. A client can only say which happened if
 > the codes differ, and "which happened" is the only part the user can act on.
+
+**[S]** `member_quota_exhausted` carries `index`, and the index names **the first op
+at which the bound was crossed**.
+
+> It needs saying because every op in a batch shares one author (§6), so the code is
+> about the author rather than about any one op, and *which* index it carries would
+> otherwise be whatever each server happened to do. The first crossing is the only
+> one that is a fact about the batch rather than about the accounting: it is where
+> counting stopped, and the batch fails whole either way.
 
 **[S]** Attribution needs **no new state**. Every envelope names its author in the
 header, and `holder_ref` groups a Workspace's devices by the identity holding them
