@@ -76,9 +76,15 @@ envelope's own length gives the body's.
 **[W]** An **unsealed** op — suite `0x00` — carries `key_epoch` 0. The field names the
 key generation that *sealed* the body, and nothing sealed it.
 
-**[C]** A reader MUST refuse a non-zero `key_epoch` on an unsealed op, exactly as it
-refuses a non-zero `nonce` there. The server judges neither (§8), and the epoch floor
-is a rule about sealed ops ([Keys](04-keys.md#the-epoch-floor-on-writes)).
+**[C]** On an unsealed op a reader MUST refuse a non-zero `key_epoch`, and MUST refuse
+a non-zero `nonce`. The server judges neither (§8).
+
+> Both fields name something about the sealing, and nothing sealed this body. The epoch
+> floor is a rule about sealed ops ([Keys](04-keys.md#the-epoch-floor-on-writes)) and the
+> server judges neither, so on an unsealed op these 28 header bytes have exactly one legal
+> value and nothing on the write path ever looks at them. The reader is the only party
+> left to refuse them, and a field with one legal value that nobody checks is 28 bytes of
+> anything at all, carried in the clear under a valid signature.
 
 **[C]** **The `observed_head` rule.** `observed_head` is reserved in v1: a reader MUST
 refuse an envelope whose `observed_head` is not all-zero. The server stores it verbatim
@@ -144,8 +150,13 @@ decrypted plaintext, when the op is sealed.
 
 **[S]** On *every* class, including those it never unpacks, the server enforces
 a **length floor**: an envelope shorter than header + smallest size class +
-signature is refused `envelope_too_short`. This follows from the size classes
-alone and reads no body byte.
+signature is refused `envelope_too_short`. **Under suite `0x01` the floor is 16
+bytes higher** — a sealed body carries the authentication tag on top of the size
+class it padded to ([Keys](04-keys.md)).
+
+> The check still reads no body byte. `suite` is a header field, and the size classes
+> are the profile's, so both floors are known before the body is looked at — which is
+> what keeps a length rule out of the range of things the server unpacks.
 
 ---
 
@@ -607,7 +618,7 @@ marks which layer owns each stage:
 
 ```
    ┌── STAGE 0 ─────────────────────────────────── Authority ──┐
-   │  Is this Workspace reachable for this user?             │
+   │  May this device address this Workspace at all?         │
    │  Is the batch within the size ceiling?                  │
    └────────────────────────┬────────────────────────────────┘
                             ▼
@@ -615,6 +626,7 @@ marks which layer owns each stage:
    │  EVERY op, header only, no body read:                   │
    │  decodes? long enough? served suite and class?          │
    │  right Workspace? authored by this token's device?      │
+   │  the right one of its two registered key ids?           │
    └────────────────────────┬────────────────────────────────┘
                             ▼
    ┌── STAGE 2 ─────────────────────────── Authority and 4 ───┐
@@ -658,18 +670,33 @@ batch. Stage 5 runs once every op has passed 2–4.
 | `422 truncated_envelope` | under 158 bytes — no header |
 | `422 envelope_too_short` | header present, but no legal body could fit |
 | `422 unsupported_op_class` | unknown, reserved, undeclared or unenabled class |
-| `422 unsupported_suite` | unknown suite byte, or one this class forbids |
+| `422 unsupported_suite` | a suite byte this server does not serve |
 | `422 encrypted_control_op` | a `0x80` op that is sealed → [Keys](04-keys.md) |
 | `422 encrypted_prune_op` | a `0x81` op that is sealed → [Keys](04-keys.md) |
 | `422 workspace_mismatch` | header names a different Workspace than the URL |
 | `403 author_member_mismatch` | header names a different device than the token |
+| `422 author_key_class_mismatch` | `author_key_id` is the wrong one of that device's two signing keys for this class → [Authority](03-authority.md); also carries `op_class` |
 
-**[S]** All of them carry the zero-based batch `index`.
+**[S]** `unsupported_suite` is only ever *this byte means nothing here*. A **served**
+suite on a class that forbids it is the `encrypted_*` family instead — the two rows
+above, and `encrypted_server_read_op` for every other server-read class
+([Keys](04-keys.md)).
+
+**[S]** Every per-op code above carries the zero-based batch `index`. The two stage-0
+refusals do not: `batch_too_large` carries `max_ops` and names no op, because no single
+op is at fault, and `no_registration` answers about this device in this Workspace
+rather than about anything in the batch.
 
 > `workspace_mismatch` is the header-versus-URL cross-check: parsed fields are
 > checked *against* the envelope bytes and never trusted *over* them.
 > `author_member_mismatch` is one comparison and no cryptography — a token speaks
 > for exactly one device, and that device is the only author it can post as.
+> `author_key_class_mismatch` is the third of the same shape and no more expensive:
+> one byte of the header against two ids the server already holds for that device.
+
+**[S]** `author_key_class_mismatch` fires only on a positive match against the
+**wrong** one of those two ids. An `author_key_id` the server holds no record of is
+**not** refused here — that is the rotation §8 declines to judge.
 
 **[S]** An empty `ops` array returns `{"results": []}` and changes nothing.
 
@@ -705,10 +732,28 @@ the op already holds, and applies nothing a second time.
 and returns `duplicate: false`. Every later occurrence returns `duplicate: true`
 with that same position.
 
-> Retrying is the normal path, not an edge case: a device that loses its
-> connection mid-request has no idea whether the batch landed. Idempotency is what
-> makes "just send it again" correct. [Authority](03-authority.md) lists four
-> further exemptions that follow from this rule.
+**[S]** **Where the lookup sits.** The `(workspace, author, op_id)` lookup runs per op
+in arrival order, **after stage 1 and before stage 2**. A repeat is answered from the
+op already stored — `duplicate: true`, at the position it holds — and stages 2 to 5 do
+not run for it.
+
+> Which pins two answers that would otherwise differ per server, and they fall on
+> opposite sides of the lookup. A stored op whose `key_epoch` has since dropped below the
+> floor answers `duplicate: true`, never `key_epoch_stale`: it was judged at its own
+> position and nothing that changed afterwards re-judges it — the same argument as
+> [Authority](03-authority.md)'s four exemptions, one layer down. Any other placement
+> would also owe an account of what stage 5 does with a repeat, whose `author_seq` is by
+> definition not the next one.
+>
+> What sits *above* the lookup is not an exception to that. Stage 1 is a complete pass
+> over the wire bytes of every op, so a repeat of an extension class the deployment has
+> since disabled is `unsupported_op_class` — a server does not look an op up under a
+> class it no longer serves, and finding out loudly is the whole point of that range
+> (§3).
+>
+> Retrying is the normal path, not an edge case: a device that loses its connection
+> mid-request has no idea whether the batch landed. Idempotency is what makes "just send
+> it again" correct.
 
 ### What a successful write causes
 
@@ -897,15 +942,22 @@ in both. Four things depend on the tombstone surviving:
 > hard-pruning recovers the payload, never the row. A Workspace of a hundred million
 > tiny ops does not shrink to nothing.
 
-**[S]** Five rules, each fail-closed:
+**[S]** Five rules, each fail-closed, **checked in this order**:
 
-| Rule | Refusal |
-|---|---|
-| the position exists — some op was stored there | `prune_target_not_found` |
-| the target is already marked reprised | `hard_prune_target_not_reprised` |
-| the target is not itself a `0x81` op | `hard_prune_target_is_prune` |
-| `envelope_hash` matches what is held at that `seq` — the stored bytes, or the tombstone's hash where they are gone | `prune_target_attestation_mismatch` |
-| the shape rules of the prune payload, unchanged | `prune_targets_empty`, `prune_duplicate_target`, `prune_targets_too_many` |
+| # | Rule | Refusal |
+|---|---|---|
+| 1 | the position exists — some op was stored there | `prune_target_not_found` |
+| 2 | the target is not itself a `0x81` op | `hard_prune_target_is_prune` |
+| 3 | the target is already marked reprised | `hard_prune_target_not_reprised` |
+| 4 | `envelope_hash` matches what is held at that `seq` — the stored bytes, or the tombstone's hash where they are gone | `prune_target_attestation_mismatch` |
+| 5 | the shape rules of the prune payload, unchanged | `prune_targets_empty`, `prune_duplicate_target`, `prune_targets_too_many` |
+
+> The order is not free, and rule 2 has to precede rule 3. A soft prune refuses a `0x81`
+> target of its own (stage 3), so no prune op is ever marked reprised: ask about the mark
+> first and every prune target answers *you skipped a step*, while rule 2 never fires at
+> all. Nothing is bought by that ordering either — the class is one byte of a header the
+> server holds under both rules — and asking it first is what keeps *this would destroy
+> the evidence* a verdict of its own rather than one a client meets by accident.
 
 **[S]** *Never assigned* and *already gone* are **different verdicts**. A `seq` no
 op was ever stored at is `prune_target_not_found` — the same code a soft prune
@@ -932,7 +984,7 @@ absent from the page, and the `hard_prune` that removed it is in the log.
 
 #### Why prune ops may never be targets
 
-**[W]** Rule 3 is not tidiness. A soft prune carries `envelope_hash` for every op it
+**[W]** Rule 2 is not tidiness. A soft prune carries `envelope_hash` for every op it
 marks, and that hash is *the only thing* that lets a verifier chain past the hole it
 created, above. Destroy the prune and every hole it authorised becomes unexplainable:
 a reader meets a gap in an author's chain with nothing to bridge it and no signed
@@ -1150,7 +1202,7 @@ already commits them to.
 | `observed_head` | reserved in v1 |
 | the `nonce` on an unsealed op | a content-blind server has no basis to judge it |
 | `key_epoch` on an unsealed op | nothing was sealed; readers hold the rule (§2) |
-| `author_key_id` against the registered key | a device may rotate its signing key; the log is the authority |
+| `author_key_id` against the registered key | a device may rotate its signing key; the log is the authority. Stage 1's class check asks a different question (§6) |
 | padding on opaque bodies (bit 7 clear) | it never unpacks them |
 
 **[S]** These fields are parsed for indexing and stored verbatim. **A replacement
@@ -1330,7 +1382,7 @@ so they are protocol:
 |---|---|---|
 | `4400` | no token in time, or a binary first frame | protocol error — fix the client |
 | `4401` | invalid token, or not a device token | park until the token refreshes |
-| `4403` | Workspace unreachable, or device revoked | terminal — do not retry blindly |
+| `4403` | no accepted registration here, or the device is revoked | terminal — do not retry blindly |
 
 **[S]** `4403` deliberately merges two causes the HTTP surface keeps apart. It is
 the **one sanctioned exception** to "codes are never merged", because the socket
