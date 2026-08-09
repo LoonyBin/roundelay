@@ -418,9 +418,11 @@ check at both doors:
 **[S]** The claim covers those five and nothing else. `admission_refused` and
 `workspace_not_created` are step 6's **branch** refusals rather than certificate
 refusals, and `workspace_not_created` sits above the signature on the append path
-(stage 2) and below it here. The joining branch's `cert_root_pk_mismatch` has no
-counterpart on the append path at all: a `member_register` op verifies under root
-authority directly, so the same disagreement answers `bad_root_signature` there.
+(first in [stage 4](03-authority.md#10-stage-4--verifying-control-ops)'s
+`member_register` sequence — stage 2 covers every class but control) and below it
+here. The joining branch's `cert_root_pk_mismatch` has no counterpart on the append
+path at all: a `member_register` op verifies under root authority directly, so the
+same disagreement answers `bad_root_signature` there.
 
 > One certificate, one vocabulary. A device that meets `cert_key_mismatch` at this
 > route has learned exactly what it would have learned meeting it on the append
@@ -539,7 +541,7 @@ permission in a Workspace already kills every refresh token scoped to that devic
 ```
 
 ```json
-← {"members": [{"member_id": "…", "holder_ref": "…",
+← {"members": [{"member_id": "…", "member_kind": "<token>", "holder_ref": "…",
                 "control_pk": "…", "content_pk": "…", "kex_pk": "…",
                 "key_ids": { … }}],
    "has_more": true}
@@ -560,6 +562,10 @@ and the result reflects it. A device appears **iff a Root-signed registration na
 **[S]** Entries carry the `holder_ref` from the registration, so a caller can group a
 Workspace's devices by the identity holding them without asking anyone. Grouping is by
 **equality within this Workspace** and nothing more ([Authority](03-authority.md)).
+
+**[S]** Entries carry the registration's own `member_kind`, served as stored — the
+profile's token, neither interpreted nor re-checked here
+([Authority](03-authority.md#member-kinds)).
 
 **[S]** Ordered by raw `member_id` bytes ascending, so two implementations return the
 same page for the same state.
@@ -639,11 +645,12 @@ the underlying index, and because device management is the obvious consumer.
 
 ## 6. Rate limits
 
-**[S]** Limits in this layer are **fixed-window**: the window opens at the first
-counted request and is not extended by later ones.
+**[S]** Rate limits in this specification are **fixed-window**: the window opens at
+the first counted request and is not extended by later ones. That holds wherever one
+is stated — the vault fetch limit of [Keys](04-keys.md) included.
 
-**[S]** A refused request still counts, except where an existence check runs first
-(the challenge route, above).
+**[S]** A refused request still counts, except where an existence check runs first —
+the challenge route above, and that same vault fetch.
 
 **[S]** `retry_after_seconds` is the remaining lifetime of the current window,
 rounded up; with no window open, the full window length.
