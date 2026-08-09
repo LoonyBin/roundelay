@@ -83,6 +83,30 @@ func (o *Object) Has(name string) bool {
 	return o.v.member(name) != nil
 }
 
+// PeekString returns a member's string value without marking it visited and
+// without recording a problem. The bool is false when the member is absent or is
+// not a string.
+//
+// It exists for the one shape the ordinary accessors cannot express: a payload
+// whose closed key set depends on one of its own members. Every server-read
+// payload carries a mandatory `type`, and which keys are legal beside it follows
+// from what that type is — so the type must be read before the key set can be
+// judged, and reading it must not itself be a judgement.
+//
+// A caller still reads the member normally afterwards. Peeking does not consume
+// it, so a payload whose type was peeked and never read reports `type` as
+// unrecognised, which is the fail-closed direction.
+func (o *Object) PeekString(name string) (string, bool) {
+	if o.dead || o.v == nil {
+		return "", false
+	}
+	m := o.v.member(name)
+	if m == nil || m.val.kind != kindString {
+		return "", false
+	}
+	return m.val.str, true
+}
+
 // Object reads a required sub-object.
 func (o *Object) Object(name string) *Object {
 	v := o.typed(name, kindObject)
@@ -142,6 +166,21 @@ func (a *Array) Object(i int) *Object {
 		return &Object{b: a.b, path: path, dead: true}
 	}
 	return &Object{b: a.b, path: path, v: e}
+}
+
+// String reads element i as a string. The path carries a bare decimal index —
+// ops.3 — which is the whole of what an array position contributes.
+func (a *Array) String(i int) string {
+	path := join(a.path, strconv.Itoa(i))
+	if a.dead || a.v == nil || i < 0 || i >= len(a.v.arr) {
+		return ""
+	}
+	e := a.v.arr[i]
+	if e.kind != kindString {
+		a.b.bad(path, fmt.Sprintf("is %s, want string", e.kind))
+		return ""
+	}
+	return e.str
 }
 
 // String reads a required string member.

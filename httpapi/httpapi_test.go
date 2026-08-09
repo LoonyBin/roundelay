@@ -2,19 +2,25 @@ package httpapi_test
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/loonybin/roundelay/codes"
 	"github.com/loonybin/roundelay/httpapi"
+	"github.com/loonybin/roundelay/internal/memstore"
 	"github.com/loonybin/roundelay/internal/testprofile"
+	"github.com/loonybin/roundelay/internal/vectors"
+	"github.com/loonybin/roundelay/oplog"
 	"github.com/loonybin/roundelay/profile"
 	"github.com/loonybin/roundelay/strictjson"
+	"github.com/loonybin/roundelay/wire"
 )
 
 // newRouter wires a router over a profile, with a v1 mux carrying one route and
@@ -508,4 +514,180 @@ func strs(t *testing.T, v any) []string {
 		out = append(out, s)
 	}
 	return out
+}
+
+// ── POST /v1/w/{workspace_id}/ops ───────────────────────────────────────────
+
+type fakeAuth struct{ device [16]byte }
+
+func (a fakeAuth) Device(_ context.Context, bearer string) ([16]byte, bool) {
+	if bearer != "good" {
+		return [16]byte{}, false
+	}
+	return a.device, true
+}
+
+type openAuthority struct{}
+
+func (openAuthority) Stage2(context.Context, oplog.Tx, oplog.Op) *oplog.Refusal { return nil }
+func (openAuthority) Stage4(context.Context, oplog.Tx, oplog.Op, int64) (string, *oplog.Refusal) {
+	return "", nil
+}
+func (openAuthority) PermitsPruneType(context.Context, oplog.Tx, [16]byte, string) *oplog.Refusal {
+	return nil
+}
+func (openAuthority) EstablishesAccess(oplog.Op) bool { return false }
+
+func opsRouter(t *testing.T) (*httpapi.Router, *memstore.Store, [16]byte) {
+	t.Helper()
+	p := testprofile.Minimal()
+	if err := p.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	st := memstore.New()
+	ws, dev := vectors.WorkspaceID, vectors.MemberA
+	st.Seed(ws, func(s memstore.Seeder) {
+		s.Exists()
+		s.Register(dev,
+			wire.KeyID(vectors.SignPub(vectors.LabelDeviceAControl)),
+			wire.KeyID(vectors.SignPub(vectors.LabelDeviceAContent)))
+	})
+
+	rt := httpapi.NewRouter(httpapi.NewHealth(p, okProbe))
+	v1 := http.NewServeMux()
+	v1.Handle("POST /w/{workspace_id}/ops", &httpapi.OpsHandler{
+		Auth:     fakeAuth{device: dev},
+		Pipeline: &oplog.Pipeline{Profile: p, Store: st, Authority: openAuthority{}},
+	})
+	v1.HandleFunc("/", httpapi.NotFound)
+	rt.Contract("v1", v1)
+	return rt, st, ws
+}
+
+func post(t *testing.T, rt http.Handler, path, token, body string) (int, map[string]any) {
+	t.Helper()
+	req := httptest.NewRequest("POST", path, strings.NewReader(body))
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	rt.ServeHTTP(rec, req)
+	var out map[string]any
+	if rec.Body.Len() > 0 {
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+			t.Fatalf("response is not JSON: %v\n%s", err, rec.Body.String())
+		}
+	}
+	return rec.Code, out
+}
+
+func signedContent(t *testing.T, seq uint64) string {
+	t.Helper()
+	h := vectors.Header(wire.ClassContent, wire.SuiteNone, 0, seq,
+		vectors.PrevHash(fmt.Sprint(seq)), vectors.ZeroNonce, vectors.LabelDeviceAContent)
+	h.OpID = vectors.Bytes16(fmt.Sprintf("http/op/%d", seq))
+	body, err := testprofile.Minimal().SizeClasses.PackBody([]byte("x"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ns, _ := wire.NewNamespace(vectors.Namespace)
+	env, err := wire.SignOp(vectors.SignPriv(vectors.LabelDeviceAContent), ns.V1(wire.DocOp), h.Marshal(), body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return base64.StdEncoding.EncodeToString(env)
+}
+
+func TestOpsRoute(t *testing.T) {
+	rt, _, ws := opsRouter(t)
+	path := "/v1/w/" + vectors.UUID(ws) + "/ops"
+	one := signedContent(t, 1)
+
+	status, body := post(t, rt, path, "good", `{"ops":["`+one+`"]}`)
+	if status != http.StatusOK {
+		t.Fatalf("status %d, body %v", status, body)
+	}
+	results, ok := body["results"].([]any)
+	if !ok || len(results) != 1 {
+		t.Fatalf("results = %v", body["results"])
+	}
+	first := results[0].(map[string]any)
+	if first["seq"] != float64(1) || first["duplicate"] != false {
+		t.Errorf("result = %v", first)
+	}
+
+	// A repeat returns the position the op already holds.
+	_, body = post(t, rt, path, "good", `{"ops":["`+one+`"]}`)
+	first = body["results"].([]any)[0].(map[string]any)
+	if first["duplicate"] != true || first["seq"] != float64(1) {
+		t.Errorf("repeat = %v", first)
+	}
+
+	// An empty ops array returns an empty results array and changes nothing.
+	status, body = post(t, rt, path, "good", `{"ops":[]}`)
+	if status != http.StatusOK || len(body["results"].([]any)) != 0 {
+		t.Errorf("empty batch: %d %v", status, body)
+	}
+}
+
+func TestOpsRouteCredentialPrecedesUnknownField(t *testing.T) {
+	rt, _, ws := opsRouter(t)
+	path := "/v1/w/" + vectors.UUID(ws) + "/ops"
+
+	// No credential, and a body with an unrecognised field: the credential
+	// answers, so the field set is not a free oracle.
+	status, body := post(t, rt, path, "", `{"ops":[],"surprise":1}`)
+	if status != http.StatusUnauthorized {
+		t.Fatalf("status %d, want 401", status)
+	}
+	if got := refusalCode(t, body); got != string(codes.InvalidCredential) {
+		t.Errorf("code %q", got)
+	}
+
+	// With a credential, the field answers.
+	status, body = post(t, rt, path, "good", `{"ops":[],"surprise":1}`)
+	if status != http.StatusUnprocessableEntity {
+		t.Fatalf("status %d, want 422", status)
+	}
+	if got := refusalCode(t, body); got != string(codes.UnknownRequestField) {
+		t.Errorf("code %q", got)
+	}
+}
+
+func TestOpsRouteRefusalsCarryIndex(t *testing.T) {
+	rt, _, ws := opsRouter(t)
+	path := "/v1/w/" + vectors.UUID(ws) + "/ops"
+
+	status, body := post(t, rt, path, "good", `{"ops":["`+signedContent(t, 1)+`","not base64!!"]}`)
+	if status != http.StatusUnprocessableEntity {
+		t.Fatalf("status %d", status)
+	}
+	detail := body["detail"].(map[string]any)
+	if detail["code"] != "malformed_base64" || detail["index"] != float64(1) {
+		t.Errorf("detail = %v", detail)
+	}
+
+	// An ops element that is not a string is a body problem, named by path.
+	status, body = post(t, rt, path, "good", `{"ops":[1]}`)
+	if status != http.StatusUnprocessableEntity {
+		t.Fatalf("status %d", status)
+	}
+	detail = body["detail"].(map[string]any)
+	if detail["code"] != "malformed_request" {
+		t.Errorf("code = %v", detail["code"])
+	}
+	if fields, _ := detail["fields"].([]any); len(fields) != 1 || fields[0] != "ops.0" {
+		t.Errorf("fields = %v", detail["fields"])
+	}
+}
+
+func TestOpsRouteMalformedWorkspaceID(t *testing.T) {
+	rt, _, _ := opsRouter(t)
+	status, body := post(t, rt, "/v1/w/NOT-A-UUID/ops", "good", `{"ops":[]}`)
+	if status != http.StatusNotFound {
+		t.Fatalf("status %d", status)
+	}
+	if got := refusalCode(t, body); got != string(codes.NotFound) {
+		t.Errorf("code %q", got)
+	}
 }
