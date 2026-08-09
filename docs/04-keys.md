@@ -188,9 +188,9 @@ informational, and never used to build a signature.
 > `bad_root_signature` — the code that is supposed to mean "forged, unrecoverable"
 > rather than "you're pointed at the wrong deployment". Advertising it is mandatory.
 
-### The thirteen fixed domains
+### The fifteen fixed domains
 
-**[W]** A **core** domain is `<namespace>/<document>/v<n>`. These thirteen are the
+**[W]** A **core** domain is `<namespace>/<document>/v<n>`. These fifteen are the
 whole of that set, and it is fixed:
 
 | Document | Frames |
@@ -198,8 +198,10 @@ whole of that set, and it is fixed:
 | `op` | `header ‖ body` — every envelope of a core- or profile-assigned class, which is every class below `0xC0` |
 | `member-register` | a registration certificate |
 | `workspace-genesis` | a genesis certificate |
+| `member-amend` | an amendment certificate |
 | `grant` | a grant certificate |
 | `revoke` | a revoke certificate |
+| `role-table` | a role-table certificate |
 | `delegate` | a delegation certificate |
 | `revoke-delegation` | a delegation-revocation certificate |
 | `root-handover` | a handover certificate |
@@ -223,9 +225,9 @@ obligations](reference/profile-obligations.md) rather than by this specification
 > `op` domain would make every extension's ops verify everywhere and mean something
 > different in each place.
 >
-> So "thirteen" counts the fixed set and nothing else. Both parts are needed: the
-> thirteen are frozen, and a deployment that enables three extensions signs under
-> sixteen domains.
+> So "fifteen" counts the fixed set and nothing else. Both parts are needed: the
+> fifteen are frozen, and a deployment that enables three extensions signs under
+> eighteen domains.
 
 **[W]** Every multi-byte integer inside a framed construction is **big-endian**, at
 the fixed width its annotation gives — `u32` is 4 bytes, `u64` is 8. The same
@@ -235,7 +237,7 @@ this table depends on a default two libraries might disagree about.
 **[W]** `member_id` in the `auth-challenge` preimage is the **16 raw bytes** of the
 id — never a textual spelling.
 
-> The same rule as the uuid5 name and the digest sort key, for the same reason: a
+> The same rule as the derived-id name and the digest sort key, for the same reason: a
 > textual identifier has spellings — case, dashes, braces — and two peers that spell
 > it differently sign different bytes and never learn why. Raw bytes have no
 > spelling. The hazard is not mitigated; it does not exist.
@@ -248,7 +250,7 @@ in-band versioning — see [Compatibility](05-compatibility.md).
 **[W]** There is **no domain for the wrapping secret's derivation**, because the
 core does not define one. A client that derives its secret by signing something
 MUST use a domain of its own, disjoint from **every domain this protocol reaches** —
-the thirteen rows above and every `ext` domain the deployment enables.
+the fifteen rows above and every `ext` domain the deployment enables.
 
 > The rule survives even though the construction does not. A key that will sign a
 > protocol message for this specification must never be induced to produce the
@@ -258,10 +260,10 @@ the thirteen rows above and every `ext` domain the deployment enables.
 
 ---
 
-## 3. Sealing a body
+## 3. Suites: sealing a body
 
-**[W]** The `suite` byte at header offset 1 names the **sealing construction** a
-body was written under. It is an open enum, not a flag:
+**[W]** The `suite` byte at header offset 1 names the **envelope construction** an op
+was written under. It is an open enum, not a flag:
 
 ```
    0x00   none           the length-prefixed, padded payload, in the clear
@@ -274,15 +276,58 @@ body was written under. It is an open enum, not a flag:
 > construction wearing the same English word. The two never touch: a body is never
 > domain-framed, and the envelope's signing domain frames it from outside.
 
+**[W]** A suite selects more than the body. It fixes the whole **envelope geometry**:
+how the body is sealed, **which signature algorithm closes the envelope and how many
+bytes that signature occupies**, whether the header's nonce carries anything, and
+whether a tag rides on top of the size class.
+
+**[W]** Both v1 values have exactly the **v1 geometry**, and nothing about a v1
+envelope's bytes depends on reading this rule: the 158-byte header of [The Log
+§2](01-the-log.md#2-the-envelope), an **Ed25519 signature of 64 bytes** over
+`header ‖ body`, an all-zero nonce under `0x00` and a live one under `0x01`, and 16
+bytes of authentication tag under `0x01` alone.
+
+> Scoped this way now, because the alternative is a wire format with no in-band route
+> to replace its own signature algorithm — a fork, on the one question a long enough
+> horizon guarantees. Ed25519 is a choice, not a constant.
+>
+> It is the same move the capability wording of the bit-7 rule below already makes.
+> That rule anticipates constructions **the server can open**; this one anticipates
+> constructions **a reader can verify**. A post-quantum envelope signature ships as a
+> suite value carrying its own signature length, refused by name — `unsupported_suite`
+> — by every reader that predates it, which is the in-band path everything else here
+> takes.
+>
+> And it costs v1 nothing, which is the test. No offset moves, no byte changes, no
+> implementation does anything differently for having read it. What changes is what a
+> later maintainer is allowed to conclude from *the suite is the sealing construction*
+> — which was that the signature is frozen, and was never meant.
+
+**[W]** Two bytes are outside every geometry and stay where they are in **all** of
+them: `op_class` at offset 0 and `suite` at offset 1. They are what a reader consults
+to learn the geometry, so they can never depend on it.
+
+> The one place the open enum would eat itself. A construction that moved its own
+> selector could only be read by someone who already knew which construction it was.
+
+**[S]** No party ever computes a geometry it does not know. The length floor is already
+a **per-suite** rule ([The Log](01-the-log.md#the-body-framing-and-padding)), derived
+from the geometry the suite names, so a suite this server does not serve has no floor to
+check: `unsupported_suite` is the whole answer.
+
+**[C]** The same holds for a reader. A suite outside its served set is refused before
+any offset in the envelope is trusted — the signature's length is the suite's, so where
+the signature *starts* is not knowable without it.
+
 **[W]** `0x00` is a member of that enum — *no sealing* — not the absence of a
 value, and a future construction ships as `0x02`
 ([Compatibility](05-compatibility.md)).
 
 > Worth insisting on, because the byte currently has two values and reads like a
-> boolean. It is the mechanism by which encryption itself is allowed to change, so
-> it stays a byte of its own. Folding it into a spare bit of the class byte — the
-> obvious-looking economy — would cap sealing constructions at two for ever, and
-> the loss is irreversible.
+> boolean. It is the mechanism by which the envelope's own cryptography — sealing and
+> signature alike — is allowed to change, so it stays a byte of its own. Folding it
+> into a spare bit of the class byte — the obvious-looking economy — would cap the
+> constructions at two for ever, and the loss is irreversible.
 
 **[S]** **Which values are legal depends on the class**, and the rule is stated on
 capability rather than on cleartext: a class with bit 7 set MUST use a construction
@@ -303,8 +348,8 @@ is the writer's, within the downgrade rule below.
 > implementation would carry the ciphertext and not the meaning. Anyone adding such
 > a suite must answer that first.
 
-**[W]** Suite `0x01` is a **body wrapper and nothing else** — no offset moves, no
-field is added:
+**[W]** Within that geometry, suite `0x01` is a **body wrapper and nothing else** — no
+offset moves, no field is added:
 
 ```
    ┌─────────────────────────── the envelope ───────────────────────────┐
@@ -323,8 +368,8 @@ field is added:
    └────────────────────────────────────────────────────────────────────┘
 ```
 
-**[W]** Exactly one rule differs by suite: a sealed body is 16 bytes longer than the
-size class it padded to — the authentication tag.
+**[W]** Between v1's two suites exactly one rule differs: a sealed body is 16 bytes
+longer than the size class it padded to — the authentication tag.
 
 > Using the literal header as associated data means the suite, the epoch and the
 > nonce are all bound with no second binding to keep in step. Change any header byte
@@ -552,6 +597,12 @@ in it binds the wrap to one slot:
 
 > Because the same bytes are both info and associated data, a mismatch on any of them
 > is an **authentication failure** — not a silent decryption to garbage.
+
+**[C]** So a `kex` amend ([Authority](03-authority.md#member_amend)) partitions a
+device's wraps rather than migrating them: every wrap minted from that position
+carries the **new** `kex_key_id`, and every wrap minted before it stays openable under
+the **retired** sealing key and under nothing else — the id is inside `info`, and
+therefore inside the associated data.
 
 ### Escrow wrap — 72 bytes
 
@@ -819,7 +870,7 @@ And four things not to do:
 > What matters in a secret is whether it was **sampled from a known distribution**,
 > not who sampled it. A person rolling dice against a word list produces exactly what
 > a machine would. Four words a person merely thought of is nowhere near it, because
-> human word choice is associative and attackers model that directly — same artifact,
+> human word choice is associative and attackers model that directly — same artefact,
 > different entropy, and indistinguishable from the string itself.
 
 ### The signature the server does check
@@ -1010,7 +1061,7 @@ An identity that stands for an organisation has exactly the vault a person's doe
 and one requirement a person's does not have: **no single individual should be able
 to open it, and no single individual's departure should close it.**
 
-The artifact needing a policy is the **wrapping secret**. It is not a password for a
+The artefact needing a policy is the **wrapping secret**. It is not a password for a
 manager belonging to whoever set the account up. It opens Root — and through the
 master wrap key beside it, every epoch key ever escrowed, which is every content key
 the organisation has used.
@@ -1194,10 +1245,20 @@ exists, a different set is refused `keywrap_already_written`.
 > log-committed digest to check.
 
 **[S]** `kex_key_id_not_registered` fires when the id is not the one derived from the
-device's **registered** sealing key.
+device's sealing key **in force in this Workspace** — its registration's, until a
+`member_amend` installs another ([Authority](03-authority.md#member_amend)). The route
+occupies no position in the log, so the key is materialised **as the route evaluates
+the request** — the same shape as the members door
+([Identity](02-identity.md#post-v1members--register-the-devices-public-keys)), and the
+only question a route with no position can ask.
 
 > Never a claim. A wrap sealed to some other key would be undeliverable, and the
 > device would look orphaned for a reason nothing in the log explained.
+>
+> Materialised state is the honest answer here, and it costs nothing: a set is minted
+> for the epoch about to be published, so the key a member should be sealed to is the
+> one it holds now. An amend that lands mid-upload refuses the set, and the remedy is
+> to rebuild it against the log — not to seal to a key the device has retired.
 
 **[S]** `duplicate_keywrap_member` fires on two wraps for one device in one set.
 
@@ -1231,6 +1292,17 @@ ascending.
 
 **[S]** **Every epoch, kept for ever.** Reprised ops are retained, so content
 sealed at any past epoch may still need opening.
+
+**[C]** Which is why a device MUST retain **every sealing private key it has ever
+held**, and not merely its current one. A `kex` amend
+([Authority](03-authority.md#member_amend)) decides which key the *next* wrap is sealed
+to and moves nothing already minted (§5), so this page spans several sealing keys per
+device, and a device that discards a retired one has discarded the epochs it was the
+key for.
+
+> No route repairs it. The set an epoch was published with is final, so there is
+> nowhere to ask for the same key sealed to a newer one — the lockout is arithmetic,
+> arriving at the moment the device tries to read something it read last year.
 
 **[S]** The page is that ordering, cut. `after_epoch` is **exclusive**: the page begins
 at the first epoch strictly above it.
