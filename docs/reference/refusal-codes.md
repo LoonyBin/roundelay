@@ -21,6 +21,7 @@ Every refusal has the shape `{"detail": {"code": …, …extra fields…}}`. On
 |---|---|---|---|---|---|
 | `admission_refused` | 403 | `POST /v1/members` | — | yes | Identity |
 | `already_revoked` | 422 | `POST …/ops` revoke, revoke_delegation | `index` | yes | Authority |
+| `amend_id_already_used` | 409 | `POST …/ops` amend | `index` | yes | Authority |
 | `author_chain_conflict` | 409 | `POST …/ops` | `index`, `author_seq`, `expected_author_seq` — **all absent on the race form** | no | Log |
 | `author_key_class_mismatch` | 422 | `POST …/ops` | `index`, `op_class` | yes | Authority |
 | `author_member_mismatch` | 403 | `POST …/ops` | `index` | yes | Log |
@@ -32,7 +33,7 @@ Every refusal has the shape `{"detail": {"code": …, …extra fields…}}`. On
 | `batch_too_large` | 413 | `POST …/ops` | `max_ops` | yes | Log |
 | `cert_granter_mismatch` | 422 | `POST …/ops` grant, revoke | `index` | yes | Authority |
 | `cert_key_mismatch` | 422 | `POST …/ops` genesis, register; `POST /v1/members` | `index` where per-op | yes | Authority |
-| `cert_member_mismatch` | 422 | `POST …/ops` genesis, register; `POST /v1/members` | `index` where per-op | yes | Authority |
+| `cert_member_mismatch` | 422 | `POST …/ops` genesis, register, amend; `POST /v1/members` | `index` where per-op | yes | Authority |
 | `cert_root_pk_mismatch` | 422 | `POST …/ops` handover; `POST /v1/members` | `index` where per-op | yes | Authority |
 | `cert_workspace_mismatch` | 422 | `POST …/ops` control | `index` | yes | Authority |
 | `control_chain_break` | 422 | `POST …/ops` control | `index`, `expected_prev_control_hash` — **absent on a genesis, and where no genesis exists** | yes | Authority |
@@ -74,6 +75,7 @@ Every refusal has the shape `{"detail": {"code": …, …extra fields…}}`. On
 | `malformed_keywrap_digest` | 422 | `PUT …/keywraps` | `expected_bytes` | yes | Keys |
 | `malformed_prune_payload` | 422 | `POST …/ops` `0x81` | `index` | yes | Log |
 | `malformed_request` | 422 | any route | `fields` | yes | Compat |
+| `malformed_role_table` | 422 | `POST …/ops` role_table | `index` | yes | Authority |
 | `malformed_root_pk` | 422 | `PUT …/vault`; `POST /v1/members`; `POST …/ops` delegate, handover | `expected_bytes`, `index` where per-op | yes | Keys |
 | `malformed_sign_pk` | 422 | `POST /v1/members` | `expected_bytes` | yes | Identity |
 | `malformed_vault_blob` | 422 | `PUT …/vault` | — | yes | Keys |
@@ -94,13 +96,15 @@ Every refusal has the shape `{"detail": {"code": …, …extra fields…}}`. On
 | `owner_revoke_requires_root` | 422 | `POST …/ops` revoke | `index` | yes | Authority |
 | `payload_overruns_body` | 422 | `POST …/ops` server-read classes | `index` | yes | Log |
 | `prune_duplicate_target` | 422 | `POST …/ops` `0x81` | `index` | yes | Log |
+| `prune_ext_name_mismatch` | 422 | `POST …/ops` prune_ext | `index`, `seq`, `expected` | yes | Log |
+| `prune_ext_wrong_class` | 422 | `POST …/ops` prune_ext | `index`, `seq` | yes | Log |
 | `prune_reprise_not_found` | 422 | `POST …/ops` prune | `index`, `reprise_op_id` | no | Log |
-| `prune_target_already_reprised` | 422 | `POST …/ops` prune | `index`, `seq` | no | Log |
+| `prune_target_already_reprised` | 422 | `POST …/ops` prune, prune_ext | `index`, `seq` | no | Log |
 | `prune_target_attestation_mismatch` | 422 | `POST …/ops` `0x81` | `index`, `seq` | yes | Log |
-| `prune_target_is_control` | 422 | `POST …/ops` prune | `index`, `seq` | yes | Log |
+| `prune_target_is_control` | 422 | `POST …/ops` prune, prune_ext | `index`, `seq` | yes | Log |
 | `prune_target_is_its_own_reprise` | 422 | `POST …/ops` prune | `index`, `seq` | yes | Log |
-| `prune_target_is_prune` | 422 | `POST …/ops` prune | `index`, `seq` | yes | Log |
-| `prune_target_is_server_read` | 422 | `POST …/ops` prune | `index`, `seq` | yes | Log |
+| `prune_target_is_prune` | 422 | `POST …/ops` prune, prune_ext | `index`, `seq` | yes | Log |
+| `prune_target_is_server_read` | 422 | `POST …/ops` prune, prune_ext | `index`, `seq` | yes | Log |
 | `prune_target_not_found` | 422 | `POST …/ops` `0x81` | `index`, `seq` | no | Log |
 | `prune_targets_empty` | 422 | `POST …/ops` `0x81` | `index` | yes | Log |
 | `prune_targets_too_many` | 422 | `POST …/ops` `0x81` | `index` | yes | Log |
@@ -133,7 +137,7 @@ Every refusal has the shape `{"detail": {"code": …, …extra fields…}}`. On
 | `workspace_not_reachable` | 403 | `POST …/ops` genesis; `POST /v1/members` | `index` where per-op | yes | Authority |
 | `workspace_quota_exhausted` | 402 | `POST …/ops` | — | no | Log |
 
-One hundred and thirteen. Admission is refused under `admission_refused` whatever mechanism a
+One hundred and seventeen. Admission is refused under `admission_refused` whatever mechanism a
 server uses, so the vocabulary stays closed even though the gate is not specified.
 
 **[S]** `fields` — on `malformed_request` as on `unknown_request_field` — always
@@ -157,6 +161,8 @@ it.
 | Code | Meaning | Where |
 |---|---|---|
 | `bad_signature` | the envelope's signature does not verify | Log |
+| `control_type_not_served` | a **load-bearing** control type this reader does not serve; authority derivation stops at that position, and everything derived below it stands | Authority |
+| `unknown_author_key` | the envelope's `author_key_id` resolves to no key in force for that device at that op's position | Authority |
 | `aead_failure` | the body did not open under the epoch key | Keys |
 | `plaintext_at_encrypted_epoch` | unsealed content at a log position after the Workspace's first `rotate` — or at any position, where epoch 0 is keyed | Keys |
 
@@ -177,12 +183,17 @@ client's response is identical either way.
 | Keep apart | Why |
 |---|---|
 | `cert_root_pk_mismatch` vs `bad_root_signature` | *this document names the wrong Root* is a rebuild; *these bytes are forged* is not |
+| `malformed_role_table` vs `malformed_control_payload` | *your payload carries a key it should not* is a serialisation bug; *your table has two owners* is a table to redesign |
+| `unknown_author_key` vs `bad_signature` | *these bytes are forged* has no remedy; *I hold no key to check them against here* has a second cause — a `member_amend` this reader was never served — and an entirely different investigation |
+| `control_type_not_served` vs `unsupported_control_type` | a **reader** stopping short of a type it does not serve, versus a **server** refusing one at its own door. A reader meets the first only because some *other* server accepted the op |
 | `unknown_grant` vs `unknown_grantee` | a failed revocation is not an invalid grantee |
 | `unknown_delegation` vs `unknown_grant` | different objects, different remedies |
 | `key_epoch_stale` vs `key_epoch_unknown` | too old is a catch-up; too new is an impossible epoch |
 | `ext_class_not_enabled` vs `unsupported_op_class` | *that class is not turned on here* versus *this op's own class is not served* |
+| `ext_name_mismatch` vs `prune_ext_name_mismatch` | one protects **the op being written**, against the binding its own author holds now; the other protects **the ops being removed**, against the NAME in force where each of them landed |
 | `encrypted_control_op` vs `encrypted_prune_op` | different remedies |
 | `prune_target_is_control` vs `prune_target_is_prune` | different reasons for exemption |
+| `prune_ext_wrong_class` vs `prune_target_is_server_read` | *fold this in the lane that owns it* is a retry with another payload; *this is the record, not a record* is the rule protecting the archive's own evidence, and reading it as a typo is what merging would invite |
 | `bad_vault_signature` vs `vault_version_regression` | *you do not control this slot* is terminal; *you are behind* is a re-read |
 | `no_registration` vs `no_live_grant` | *you are not a member here* needs a registration; *you have no permission* needs a grant |
 | `workspace_not_reachable` vs `no_registration` | *that id is not yours to found* versus *you have not been let in* |

@@ -12,6 +12,12 @@ fixes only the carrier — a
 format; the profile declares only where the gate lives.
 [Identity](../02-identity.md)
 
+**advisory control type** — a control type whose name begins `note_`, reserved for ever. It
+bears no authority and alters no derived state, so a reader that does not serve one
+hash-chains past it without interpreting it and keeps answering for later positions.
+Every other type is **load-bearing**; v1 defines no advisory type, and no load-bearing
+type may ever be named `note_*`. [Authority](../03-authority.md)
+
 **author position** — `author_seq`. An op's 1-based, gap-free position within its own
 author's chain, per Workspace. Not the transport position.
 [The Log](../01-the-log.md)
@@ -41,11 +47,14 @@ envelopes and the auth challenge, used occasionally.
 bodies at one epoch, where they are sealed at all. An unkeyed Workspace has none.
 [Keys](../04-keys.md)
 
-**control op** — class `0x80`. Server-read, and the permission record.
-[Authority](../03-authority.md)
+**control op** — class `0x80`. Server-read, and the permission record. Ten types in v1,
+every one of them load-bearing; a type named `note_*` is *advisory* instead, and v1
+names none. [Authority](../03-authority.md)
 
 **control chain** — the one chain of control payloads a Workspace has, enforced by the
-server. Every non-genesis payload links the previous by SHA-256 over its bytes
+server. Every non-genesis payload links the previous by a hash of its bytes —
+SHA-256 under the v1 suites; the function is the linking op's suite's
+([Compatibility](../05-compatibility.md)) —
 (`prev_control_hash`); only the genesis has none. The **control tip** is the latest
 accepted payload's hash — derived when asked, never stored. A reader verifies the
 chain unbroken from genesis; a break is a truncated or tampered history, not a gap to
@@ -66,7 +75,8 @@ before any wrap is uploaded. [Keys](../04-keys.md)
 **envelope** — the complete signed byte string: header, body, signature.
 [The Log](../01-the-log.md)
 
-**envelope hash** — bare SHA-256 over the complete envelope bytes,
+**envelope hash** — bare SHA-256 (under the v1 suites; the function follows the
+referencing op's suite) over the complete envelope bytes,
 `header || body || signature`, nothing prefixed or re-serialised. What
 `prev_author_hash` and a prune target's attestation carry.
 [The Log](../01-the-log.md)
@@ -81,7 +91,8 @@ semantic handshake, scoped to `(Workspace, member, class)`.
 
 **extension class** — a server-read class in `0xC0–0xFF`, defined by an
 implementation, enabled by the profile, bound per member by an `ext_binding`.
-Disabled by default. [The Log](../01-the-log.md)
+Disabled by default, and foldable by `prune_ext` and by nothing else.
+[The Log](../01-the-log.md)
 
 **founding Root** — the Root that authored a Workspace's genesis. Its public key is
 what a Workspace id is bound to at genesis, so it never changes.
@@ -109,6 +120,12 @@ registration. The only thing that authors ops. [Identity](../02-identity.md)
 member this is. The core knows only that the tokens exist.
 [Authority](../03-authority.md)
 
+**member_amend** — the control type that replaces the keys a device holds — any subset
+of `control`, `content`, `kex`, at least one. Signed under root authority, so a live
+delegate may issue one, and **per Workspace** like the registration it amends. A
+replaced key stops signing from that op's position and keeps verifying its own older
+ops for ever. [Authority](../03-authority.md)
+
 **op** — one record of change, authored by one device: signed, usually sealed,
 immutable. [The Log](../01-the-log.md)
 
@@ -127,8 +144,15 @@ now". [The Log](../01-the-log.md)
 **profile** — the per-deployment policy layer the core requires.
 [Profile obligations](profile-obligations.md)
 
-**prune op** — class `0x81`. Server-read, and self-identifying by a mandatory `type`:
-`prune` attests which ops a reprise stands in for, `hard_prune` reclaims their bytes.
+**prune op** — class `0x81`. Server-read, and self-identifying by a mandatory `type`.
+Three in v1: `prune` attests which ops a reprise stands in for, `prune_ext` folds one
+extension class, and `hard_prune` reclaims the bytes of whatever either mark reached.
+[The Log](../01-the-log.md)
+
+**prune_ext** — the `0x81` payload type that folds an **extension class**, naming the
+class and the NAME its targets were written under. One class and one name per op; it
+reaches that class and nothing else, the name is checked per target against the NAME in
+force for that target's author *there*, and no reprise stands behind it.
 [The Log](../01-the-log.md)
 
 **access gate** — the check, on every Workspace-scoped device route, that this device
@@ -151,13 +175,24 @@ two variants — reclaiming storage, and restating in a newer payload encoding �
 one operation here; which was meant lives in the payload.
 [The Log](../01-the-log.md)
 
-**reprised** — the state of an op named by an accepted prune: hidden from ordinary
-reads, still served by `include_reprised=true`. Reversible, and the only state from
-which a `hard prune` may destroy the bytes.
+**reprised** — the state of an op named by an accepted `prune` or `prune_ext`: hidden
+from ordinary reads, still served by `include_reprised=true`. Nothing distinguishes the
+two marks. Reversible, and the only state from which a `hard prune` may destroy the
+bytes.
 
 **hard prune** — the `0x81` payload type that destroys a reprised op's envelope bytes,
 leaving a tombstone. The one irreversible operation in the protocol, conferred only by
 a role entry that names it. [The Log](../01-the-log.md)
+
+**role table** — the role tokens a Workspace recognises and, for each, which op classes
+and which `0x81` payload types they permit. The profile supplies the initial one; from
+the first `role_table` op onward the log supplies it instead. **Positional**: the table
+in force at a position is the one carried by the latest `role_table` op strictly below
+it. [Authority](../03-authority.md)
+
+**role_table** — the control type that installs one. A **complete replacement**, never a
+patch; signed by the current Root itself and never by a delegate, so it needs no grant;
+and it re-judges nothing already in the log. [Authority](../03-authority.md)
 
 **Root** — the identity: an Ed25519 keypair whose public key names the Workspaces it
 founded. Signs certificates; never authenticates; never appears in a header. Not a
@@ -167,15 +202,18 @@ credential. [Authority](../03-authority.md)
 under: its current Root, or a delegation live at the relevant point — positional at
 that op's position on the append path, live as the route evaluates the request at
 `POST /v1/members`. What "Root-signed" means, said of a control payload, and the
-permission bypass carries with it. Genesis, handover and the vault are never
-delegable, so there root authority is the current Root alone.
+permission bypass carries with it. Genesis, handover, the role table and the vault are
+never delegable, so there root authority is the current Root alone.
 [Authority §6](../03-authority.md#6-delegation-keeping-root-cold)
 
 **root handover** — the control op that moves a Workspace's current Root to a new
 key, signed by the key it retires. [Authority](../03-authority.md)
 
-**served set** — the suites, op classes or control types an implementation
-understands. Anything outside fails closed. [Compatibility](../05-compatibility.md)
+**served set** — one of the five sets that say what an implementation understands:
+suites, op classes, control types, prune types, `ext_binding` types. Anything outside
+fails closed. `GET /health` advertises four of them under `served_sets` — every set but
+`ext_binding` types — and names the enabled extension classes under
+`extension_classes`. [Compatibility](../05-compatibility.md)
 
 **shell** — a device record created by `POST /v1/members` whose registration has not
 yet been accepted into the log. Confers nothing.

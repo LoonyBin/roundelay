@@ -90,11 +90,11 @@ Read them in this order. Each one only depends on the ones above it.
 
 Reference material, extracted so the narrative does not carry it:
 
-- [Refusal codes](reference/refusal-codes.md) — all 119, with status, cause and whether a retry can help
+- [Refusal codes](reference/refusal-codes.md) — all 125, with status, cause and whether a retry can help
 - [Glossary](reference/glossary.md) — every term, defined once
 - [Retained state](reference/retained-state.md) — what a server must remember
 - [Profile obligations](reference/profile-obligations.md) — the eleven decisions a deployment must make
-- [Conformance](../conformance/checklist.yaml) — 226 machine-readable items
+- [Conformance](../conformance/checklist.yaml) — 250 machine-readable items
 
 ---
 
@@ -141,7 +141,7 @@ Prose in these documents comes in two kinds, and telling them apart matters.
 | **[S]** | the server | *[S] The server MUST NOT verify envelope signatures.* |
 | **[C]** | a client | *[C] A client MUST verify every envelope it pulls.* |
 | **[W]** | the wire format, so both | *[W] Hex values are lowercase.* |
-| **[P]** | the profile | *[P] The profile MUST declare a role table.* |
+| **[P]** | the profile | *[P] The profile MUST declare an initial role table.* |
 
 MUST, MUST NOT, SHOULD, MAY are used as in RFC 2119.
 
@@ -166,6 +166,9 @@ These apply in all five layers, so they are stated once here.
 Every functional route lives under a contract-version segment: `/v1/…`. Only
 `GET /health` and `GET /health/db` sit outside it, because a client must be able
 to ask what the server supports before it knows what the server supports.
+A route is never added to a version already being served — a new route ships under a
+new version — so whether a server has a route is always answered by
+`contract_versions`, never by a `404` a client has to interpret.
 [Compatibility](05-compatibility.md) explains the scheme.
 
 ### Errors
@@ -179,6 +182,10 @@ to ask what the server supports before it knows what the server supports.
 `code` is a stable machine-readable name from the [code
 list](reference/refusal-codes.md). Extra fields are per-code. There is no second
 error shape — a client that branches on `detail.code` never meets a bare string.
+
+**[C]** A client **ignores** any member of a response it does not recognise, in a
+refusal detail as anywhere else, and never refuses the response for carrying it
+([Compatibility §4](05-compatibility.md#4-unknown-fields-are-refused)).
 
 | Status | Means |
 |---|---|
@@ -231,7 +238,7 @@ boolean, never a string. Ranges:
 | hex-64 (`prev_control_hash`, `expected_prev_control_hash`, `envelope_hash`) | `^[0-9a-f]{64}$` |
 | HLC member id | `^[0-9a-f]{32}$` |
 | canonical UUID | `^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$` |
-| `member_kind`, role token | `^[a-z][a-z0-9_-]{0,31}$` |
+| `member_kind`, role token | `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`, 1–32 bytes |
 | authority (`granter`, `revoker`) | `root`, or a canonical UUID |
 
 **[S]** Timestamps the server originates are RFC 3339, `Z` offset, millisecond
@@ -291,7 +298,17 @@ the signed log themselves.
 **Everything fails closed.** An unknown suite, op class, control type, role,
 member kind, or request field is a refusal — never a shrug. A field that is
 permitted-and-ignored is one a future reader might start honouring, and two
-implementations disagreeing about whether it counts is a convergence bug.
+implementations disagreeing about whether it counts is a convergence bug. The one
+reservation is the `note_*` control types, advisory for ever and chained past rather
+than interpreted by a reader ([Authority](03-authority.md)) — a place kept in v1, with
+no member in it.
+
+> The direction is part of the rule. Those are all things a **caller sends**, and the
+> failure is a party acting on less than it was given. A field the **server** adds to a
+> response is ignored rather than refused ([Compatibility
+> §4](05-compatibility.md#4-unknown-fields-are-refused)) — nobody was asked to act on
+> it, and refusing the answer for saying more than expected freezes every response
+> shape at its earliest reader.
 
 **Refusal codes are protocol.** They may not be narrowed, merged, or invented
 locally. A client that meets an unfamiliar code surfaces it verbatim.

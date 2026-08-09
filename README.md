@@ -31,11 +31,11 @@ ones above it.
 
 Reference material, kept out of the narrative:
 
-- [Refusal codes](docs/reference/refusal-codes.md) — all 119, with cause and whether a retry helps
+- [Refusal codes](docs/reference/refusal-codes.md) — all 125, with cause and whether a retry helps
 - [Glossary](docs/reference/glossary.md)
 - [Retained state](docs/reference/retained-state.md) — what a server must remember
 - [Profile obligations](docs/reference/profile-obligations.md) — the eleven decisions a deployment makes
-- [Conformance](conformance/checklist.yaml) — 226 machine-readable items
+- [Conformance](conformance/checklist.yaml) — 250 machine-readable items
 
 ---
 
@@ -44,7 +44,7 @@ Reference material, kept out of the narrative:
 A running server is **core plus exactly one profile**. The core defines the
 transport, the trust model and the refusal vocabulary. The profile supplies what is
 genuinely a product decision: the protocol namespace, the Workspace topology, where
-admission is enforced, the role table, the member kinds, and a handful of tuned
+admission is enforced, the initial role table, the member kinds, and a handful of tuned
 constants.
 
 There are **no defaults**. A server refuses to start with any profile decision
