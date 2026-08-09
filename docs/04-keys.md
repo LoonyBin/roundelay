@@ -867,7 +867,7 @@ record verbatim.
 > whose reads nobody can ever account for.
 
 **[S]** **Rate-limited per locator**, and **existence is checked before the quota is
-spent**.
+spent** — fixed-window, on the terms of [Identity §6](02-identity.md#6-rate-limits).
 
 > The limit bounds bytes leaving the slot. A slot holding nothing must not be able to
 > burn it — otherwise twenty pointless requests lock out the one fetch that actually
