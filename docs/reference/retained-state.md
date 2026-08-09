@@ -81,6 +81,16 @@ demand.
 > records that produced it — and `rotate_epoch_conflict`'s `expected_from_epoch`
 > depends on it being right.
 
+**[S]** A Workspace's **control tip** — the hash of the latest accepted control op's
+payload ([Authority](../03-authority.md#the-control-chain)) — is likewise computed on
+demand. The bytes it is computed from are always there: a control op is never a prune
+target (`prune_target_is_control`), so no `hard_prune` can reach its envelope.
+
+> Same reasoning, one step further along. A stored tip is a cache of a function of the
+> log, free to drift from it, and the drift is spelled `control_chain_break` on a
+> request that was correct — or, worse the other way, a chain the server stopped
+> enforcing.
+
 ## What a log replay can and cannot rebuild
 
 **[S]** These are **derivable from the log alone**, and a replacement MAY rebuild them

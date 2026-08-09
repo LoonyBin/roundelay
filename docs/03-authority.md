@@ -131,7 +131,7 @@ what makes a Workspace private to one identity for ever.
               a profile decision · §3.1
 
    ACCESS     may this device address this Workspace at all?
-              ── asked on every other Workspace-scoped route ──
+              ── every other Workspace-scoped route, once it exists ──
               a fact in the log · §3.2
 ```
 
@@ -217,6 +217,26 @@ before anything else, and refuses `403 no_registration` when the answer is no:
    does this device hold an accepted registration in this Workspace?
 ```
 
+**[S]** The gate is asked of a Workspace that **has an accepted genesis**. Before one
+exists there is nothing to be registered in, so no route refuses `no_registration` for
+want of a registration that could not exist yet.
+
+**[S]** Where no genesis has landed, each route answers by its own rule instead:
+**reads** answer as an empty Workspace does — an empty page, an empty member list
+([The Log](01-the-log.md#9-reading-get-v1wworkspace_idops),
+[Identity](02-identity.md)); the **signal socket** is accepted and behaves as a
+subscription to an empty Workspace, its first poke arriving when the genesis does; and
+**writes** are answered by the [append pipeline](01-the-log.md#the-pipeline) —
+`409 workspace_not_created` at stage 2, or accepted as the op that brings the
+Workspace into being, under the carve-out below.
+
+> An empty answer discloses nothing an empty Workspace does not disclose anyway, and
+> the enrolment ceremony branches on exactly this observation: a device holding a token
+> and no permissions reads first, and creates only if the read came back empty.
+> Refusing would make the gate contradict itself — the device about to found the
+> Workspace cannot be registered in it, because there is no log for a registration to
+> have been accepted into.
+
 **[S]** This is **not** a profile decision. It is read from the log, it is the same
 question on every server, and a profile MUST NOT widen or narrow it.
 
@@ -288,6 +308,19 @@ bytes** — the unpacked payload, not the envelope, not a re-serialisation.
       link        genesis     register   grant       register  grant
 ```
 
+**[W]** Control ops form **one chain per Workspace, and the server enforces it**.
+Every non-genesis control payload's `prev_control_hash` names the **immediately
+preceding accepted control op's payload** — the **control tip** at that op's position.
+Within a batch the tip advances as the batch walks, so an enrolment batch's second
+control op links its first. A genesis has no predecessor: the zero-link rule below is
+where the chain starts. A link that names anything else is `control_chain_break`
+(§10).
+
+> The server has to enforce it, or the property does not exist to be read. Two ops
+> racing on the same predecessor would both land, the stored links would stop forming a
+> chain, and the reader's rule below would quarantine an entirely honest log. Linearity
+> is the property; refusing the loser is what maintains it.
+
 **[W]** Because a chain link points at bare bytes with no surrounding context,
 **every control payload must be self-identifying: `type` is mandatory in every type,
 for ever.**
@@ -302,6 +335,20 @@ accept a non-genesis control op with a zero link even when its own view is empty
 > device a history that starts in the middle — omitting a revocation, say — and the
 > device would have no way to notice. With it, the only op that may claim "I am the
 > beginning" is the one that genuinely is.
+
+**[C]** A reader replaying the control log MUST verify the links form **one unbroken
+chain from genesis**: each link resolves to the payload of the control op immediately
+before it, and only the genesis has none. A break is a **truncated or tampered
+history**, not a gap to skip.
+
+> Linearity is what makes a withheld *middle* op loud. The zero rule catches a history
+> that starts late; without this one, a history with a hole in it passes, because an op
+> nothing happens to link can be dropped and the ops on either side still verify.
+>
+> And a hole is not a gap in the record — grants and revokes take effect **positionally**
+> (§11), whether or not anything links them. So the op a hostile server withholds is a
+> live permission the reader never learns about, which is exactly the thing this layer
+> exists to make underivable by the server.
 
 ---
 
@@ -411,7 +458,12 @@ same codes. One certificate, one vocabulary, whichever door it arrives at.
 
 // genesis — signed by Root
 {"workspace_id": "…", "root_pk": "<b64 32B>",
- "founder": { …the same key block… },
+ "founder": {"member_id": "…", "member_kind": "<token>",
+             "holder_ref": "<b64 32B>",
+             "control_pk": "<b64 32B>", "control_key_id": "<b64 8B>",
+             "content_pk": "<b64 32B>", "content_key_id": "<b64 8B>",
+             "kex_pk":     "<b64 32B>", "kex_key_id":     "<b64 8B>",
+             "registered_at_hlc": [wall_ms, counter, "<hex32>"]},
  "created_at_hlc": [...]}
 
 // grant — signed by Root, or by a device that holds the authority role
@@ -436,6 +488,17 @@ same codes. One certificate, one vocabulary, whichever door it arrives at.
 {"workspace_id": "…", "from_root_pk": "<b64 32B>", "to_root_pk": "<b64 32B>",
  "handed_over_at_hlc": [...]}
 ```
+
+**[W]** The `founder` block is a **closed set of exactly ten keys**: the registration
+certificate's own set minus `workspace_id` — `member_id`, `member_kind`, `holder_ref`,
+`control_pk` and `control_key_id`, `content_pk` and `content_key_id`, `kex_pk` and
+`kex_key_id`, `registered_at_hlc`. Present or absent, no substitutions, judged as shape
+like every other closed set (§5).
+
+> Minus that one field because the genesis already carries it, once. A nested copy
+> would be a second spelling of a single value, and the only thing to do with a second
+> spelling is cross-check it against the first — which `cert_workspace_mismatch`
+> already does to the one that is there.
 
 **[W]** A handover is signed by the key it retires, never by the key it installs.
 
@@ -700,8 +763,8 @@ want — a managed laptop and not a personal tablet — and it stays expressible
 ### Genesis carries its own founder's registration
 
 **[W]** A genesis certificate embeds a full key block for the device that founded the
-Workspace — including its `holder_ref` — and that block **is** that device's
-registration. The founder writes no separate `member_register`.
+Workspace — the ten fields enumerated above, `holder_ref` among them — and that block
+**is** that device's registration. The founder writes no separate `member_register`.
 
 > It has to work this way. The envelope is signed by the founder's key, but nothing
 > earlier in the log says what that key is — genesis is op 1. So the certificate has
@@ -961,13 +1024,28 @@ for every class but control.
         ─► control_chain_break
 ```
 
+**[S]** `control_chain_break` refuses **two things**: the zero-link rule of §4 — a zero
+on a non-genesis type, anything else on a genesis — and a link that is not the hash of
+the **control tip at this op's position**.
+
+**[S]** It carries `expected_prev_control_hash`, the link the op should have named.
+The field is **absent** where there is none to name: on a genesis, whose only legal
+link is the zero link, and before a genesis, where there is no tip at all.
+
+**[S]** The tip comparison is asked only of a Workspace with an **accepted genesis**,
+because before one there is nothing to compare against. A non-genesis control op
+arriving there is refused by the rules that already answer it —
+`409 workspace_not_created` on a `member_register`, `member_register_not_first` on
+anything else. The zero-link half is shape, and is asked either way.
+
 **[S]** `control_chain_break` is checked **before** any type-specific rule, so a
 misplaced genesis with a non-zero link answers `control_chain_break` rather than
 `genesis_not_first`.
 
-> Everything in that chain is **shape**: framing, decoding, a served type, a link that
-> fits. Two codes that look like they belong there do not, and both sit in the grant
-> sequence below, under `bad_grant_signature`.
+> Everything in that chain runs **above authority**: framing, decoding, a served type,
+> a link that fits. The tip comparison reads the log and judges nothing it finds there
+> — no value, no permission. Two codes that look like they belong in the chain do not,
+> and both sit in the grant sequence below, under `bad_grant_signature`.
 >
 > `owner_grant_requires_root` is an authority verdict, and nothing decides who may do
 > what from bytes whose signature has not verified. `unknown_role` judges a **value**
@@ -977,6 +1055,39 @@ misplaced genesis with a non-zero link answers `control_chain_break` rather than
 > either.
 >
 > Refusal order is observable, so each of them can only be in one place.
+
+**[S]** This is also the verdict a **concurrency loser** gets. Two devices that read
+the same tip and both build against it are both well-formed; the one that commits
+second named a tip that has moved, and is refused.
+
+> Every concurrency hazard in this layer has a named verdict — `author_chain_conflict`
+> for the author's own chain ([The Log](01-the-log.md#stage-5--the-author-chain)),
+> `rotate_epoch_conflict` for epochs ([Keys](04-keys.md)), and this for the control
+> chain — and not one of them is a retry of the same bytes. The remedy is always
+> rebuild and re-sign, which is why the code stays deterministic: what comes back is a
+> different request.
+
+**[C]** A device that can read the log MUST **re-read** before rebuilding, and not
+merely re-link against `expected_prev_control_hash`. The tip moved because somebody
+else's control op landed, and what that op says may change what this one should be —
+or whether it should be written at all.
+
+> The field is there for the device that **cannot** read. A joining device's
+> `member_register` is exempt from the access gate (§3.2) but not from the chain, and
+> it holds no read on the Workspace until that very op lands; without the field its
+> first op could never be built at all. With it, one refusal tells it the tip and the
+> second attempt lands.
+>
+> Which prices the disclosure honestly. Any device holding a token and the Workspace id
+> can learn the tip by posting a `member_register` naming itself, because the chain
+> check sits above the certificate check. What it learns is the hash of bytes it cannot
+> read — a control-plane change detector and nothing more, since the payload it hashes
+> carries a signature nobody can guess. The alternative was to run this one op's chain
+> check below its own certificate, and a conditional refusal order costs more than the
+> detector does.
+
+**[S]** A **repeat** is never judged against the tip: a re-posted control op names the
+tip it was built against, which has since moved — §12.
 
 **[S]** Then, **unless the payload is Root-signed**, the authority-role check for
 `0x80`: `no_live_grant` or `role_forbids_op_class`.
@@ -1017,8 +1128,9 @@ in force is that it already exists, and that is check 1.
 > names is `workspace_not_reachable`; a Workspace that is already founded is
 > `genesis_not_first`.
 
-> A second genesis is not a fork for the server to resolve: it holds no control chain
-> of its own, so it refuses and leaves the tie-break to the devices that do. Two
+> A second genesis is not a fork for the server to resolve. Both documents claim to be
+> the beginning, and the chain rule cannot separate two ops that have no predecessor —
+> so the server takes the one that lands and leaves the tie-break to the devices. Two
 > devices holding one Root may legitimately both observe an empty log and both author
 > one.
 > Exactly one lands; the loser always gets `genesis_not_first`, including when the
@@ -1373,14 +1485,15 @@ accepted; grants it minted stay live.
 
 ## 12. Repeats, again
 
-[The Log](01-the-log.md) established that re-posting an op is free. Four consequences
-land here, and all four are required:
+[The Log](01-the-log.md) established that re-posting an op is free. Five consequences
+land here, and all five are required:
 
 | Replayed | Must **not** raise | Because |
 |---|---|---|
 | a grant | `grant_id_already_used` | the id belongs to the op that first asserted it |
 | a revoke | `already_revoked` | and the boundary must not move |
 | a prune | `prune_target_already_reprised` | it marked those targets itself |
+| any control op | `control_chain_break` | its link named the tip it was built on, and the tip has moved since (§4) |
 | any control op | — | it must not take effect twice |
 
 > Same argument each time: re-posting an op asserts nothing new. Without these, every
