@@ -1,0 +1,144 @@
+{
+  "ambiguous_ladder_note": {
+    "classes": [
+      512,
+      3000
+    ],
+    "oversize_step": 1024,
+    "payload_len": 3000,
+    "reading_largest_plus_step": 4024,
+    "reading_multiple_of_step": 3072,
+    "this_implementation_writes": 3072,
+    "warning": "NOT a conformance vector. This ladder separates the two readings of 'above the largest, to the next multiple of a fixed step', and the core does not say which is meant. A profile should not choose a ladder whose largest class is not a multiple of its step."
+  },
+  "ladder": {
+    "ambiguous_oversize": false,
+    "classes": [
+      512,
+      4096
+    ],
+    "oversize_step": 4096
+  },
+  "legal_body_len": [
+    {
+      "body_len": 0,
+      "legal": false
+    },
+    {
+      "body_len": 4,
+      "legal": false
+    },
+    {
+      "body_len": 511,
+      "legal": false
+    },
+    {
+      "body_len": 512,
+      "legal": true
+    },
+    {
+      "body_len": 513,
+      "legal": false
+    },
+    {
+      "body_len": 1024,
+      "legal": false
+    },
+    {
+      "body_len": 4095,
+      "legal": false
+    },
+    {
+      "body_len": 4096,
+      "legal": true
+    },
+    {
+      "body_len": 4097,
+      "legal": false
+    },
+    {
+      "body_len": 8192,
+      "legal": true
+    },
+    {
+      "body_len": 12288,
+      "legal": true
+    },
+    {
+      "body_len": 12289,
+      "legal": false
+    }
+  ],
+  "min_envelope_len": {
+    "suite_0x00": 734,
+    "suite_0x01": 750
+  },
+  "note": "Body = payload_len (u32 big-endian) || payload || zero padding to a size class. Above the largest class, to the next multiple of the oversize step. Under suite 0x01 the on-wire body is 16 bytes longer than the class it padded to.",
+  "padding": [
+    {
+      "payload_len": 0,
+      "body_len": 512,
+      "sealed_body_len": 528,
+      "body_first_16_hex": "00000000000000000000000000000000",
+      "body_sha256_hex": "076a27c79e5ace2a3d47f9dd2e83e4ff6ea8872b3c2218f66c92b89b55f36560"
+    },
+    {
+      "payload_len": 1,
+      "body_len": 512,
+      "sealed_body_len": 528,
+      "payload_hex": "00",
+      "body_first_16_hex": "00000001000000000000000000000000",
+      "body_sha256_hex": "aed59380c12c111bd8c966dea7e08f1047ea6ef4f44946f467fb5378aebfd943"
+    },
+    {
+      "payload_len": 507,
+      "body_len": 512,
+      "sealed_body_len": 528,
+      "body_first_16_hex": "000001fb000102030405060708090a0b",
+      "body_sha256_hex": "83347d3f605837ff3e8f713ca1253edfecdba5770a516e185a7da67d58ed4289"
+    },
+    {
+      "payload_len": 508,
+      "body_len": 512,
+      "sealed_body_len": 528,
+      "body_first_16_hex": "000001fc000102030405060708090a0b",
+      "body_sha256_hex": "e67ec03416b32d5a6e217df23774b5daf84f7af6a468370c8f12fe7e7a9227a0"
+    },
+    {
+      "payload_len": 509,
+      "body_len": 4096,
+      "sealed_body_len": 4112,
+      "body_first_16_hex": "000001fd000102030405060708090a0b",
+      "body_sha256_hex": "23c5499d49fa55c5ea6d8aeee129e860a5e1937038995cabb44b846d1a1bc8f3"
+    },
+    {
+      "payload_len": 4091,
+      "body_len": 4096,
+      "sealed_body_len": 4112,
+      "body_first_16_hex": "00000ffb000102030405060708090a0b",
+      "body_sha256_hex": "1ba4fe1d90ddb7c7e34ac8728993e178c2f8d434bf87bd9f8135baf57ddac5d9"
+    },
+    {
+      "payload_len": 4092,
+      "body_len": 4096,
+      "sealed_body_len": 4112,
+      "body_first_16_hex": "00000ffc000102030405060708090a0b",
+      "body_sha256_hex": "59173590920106516be716c7b0a8a43cbe0743de030f574e9c199a8f2b0bf033"
+    },
+    {
+      "payload_len": 4093,
+      "body_len": 8192,
+      "sealed_body_len": 8208,
+      "body_first_16_hex": "00000ffd000102030405060708090a0b",
+      "body_sha256_hex": "8c724b87e6bfceb5566376334996d9e29c263ef5cc95a706f01ca97bbcf333dc"
+    },
+    {
+      "payload_len": 8188,
+      "body_len": 8192,
+      "sealed_body_len": 8208,
+      "body_first_16_hex": "00001ffc000102030405060708090a0b",
+      "body_sha256_hex": "c5a402f18ff07d17816013217fe83cd573656bbf7deaa2df914c3caa149e8180"
+    }
+  ],
+  "payload_filler": "byte i of a payload of length n is (i mod 251), so every vector's payload is reproducible from its length alone."
+}

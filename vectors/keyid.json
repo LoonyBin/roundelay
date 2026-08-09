@@ -1,0 +1,40 @@
+{
+  "cases": [
+    {
+      "label": "device-a/control",
+      "kind": "ed25519",
+      "public_key_b64": "3vXuKsOPqE7enrQL8X/d6UVTiWLx7t108+fjwScysjY=",
+      "key_id_b64": "PkGU77oYQi8=",
+      "key_id_hex": "3e4194efba18422f"
+    },
+    {
+      "label": "device-a/content",
+      "kind": "ed25519",
+      "public_key_b64": "sEPAUlD+VYpWtz0xaJezf5lkKz/y/Hpdx9t1cErq3rw=",
+      "key_id_b64": "QuPhSaIWlww=",
+      "key_id_hex": "42e3e149a216970c"
+    },
+    {
+      "label": "device-a/kex",
+      "kind": "x25519",
+      "public_key_b64": "QgLDcLWeeDjh8hs5O82Ov9/IpsY2igrjkwQf+QGNsC4=",
+      "key_id_b64": "Sgzn3DNLwfQ=",
+      "key_id_hex": "4a0ce7dc334bc1f4"
+    },
+    {
+      "label": "device-b/kex",
+      "kind": "x25519",
+      "public_key_b64": "VkHQpsxRWUQdXc+CbCNS4GOrKwMQna9q898cqEW6gHA=",
+      "key_id_b64": "YMqNAsxxN1w=",
+      "key_id_hex": "60ca8d02cc71375c"
+    },
+    {
+      "label": "root",
+      "kind": "ed25519",
+      "public_key_b64": "DGLJ9+VqyX5zS9pCR0IDzUwEHARJ9MNNxsDyQC7DtxM=",
+      "key_id_b64": "r2rEuj3SkaY=",
+      "key_id_hex": "af6ac4ba3dd291a6"
+    }
+  ],
+  "note": "key_id = the first 8 bytes of SHA-256 over the public key. Always derived by the server; a client's claim is cross-checked and discarded."
+}

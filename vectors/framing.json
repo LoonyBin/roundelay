@@ -1,0 +1,41 @@
+{
+  "cases": [
+    {
+      "name": "empty_rest",
+      "domain": "acme/op/v1",
+      "domain_len": 10,
+      "rest_hex": "",
+      "framed_hex": "0a61636d652f6f702f7631"
+    },
+    {
+      "name": "one_byte",
+      "domain": "acme/op/v1",
+      "domain_len": 10,
+      "rest_hex": "00",
+      "framed_hex": "0a61636d652f6f702f763100"
+    },
+    {
+      "name": "digit_leading_rest",
+      "domain": "acme/vault/v1",
+      "domain_len": 13,
+      "rest_hex": "32666f6f",
+      "framed_hex": "0d61636d652f7661756c742f763132666f6f"
+    },
+    {
+      "name": "collision_a",
+      "domain": "acme/op",
+      "domain_len": 7,
+      "rest_hex": "2f76317c7061796c6f6164",
+      "framed_hex": "0761636d652f6f702f76317c7061796c6f6164"
+    },
+    {
+      "name": "collision_b",
+      "domain": "acme/op/v1",
+      "domain_len": 10,
+      "rest_hex": "7c7061796c6f6164",
+      "framed_hex": "0a61636d652f6f702f76317c7061796c6f6164"
+    }
+  ],
+  "collision_note": "collision_a and collision_b concatenate to identical bytes without the length prefix and to distinct bytes with it. An implementation whose framed_hex values match for those two rows has dropped the prefix.",
+  "note": "framed(domain, rest) = [1 byte: len(domain)] [domain] [rest]. The length prefix is what makes the construction injective: the collision pair below is the case plain concatenation gets wrong."
+}

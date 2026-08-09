@@ -1,0 +1,91 @@
+{
+  "core": [
+    {
+      "document": "op",
+      "domain": "acme/op/v1"
+    },
+    {
+      "document": "member-register",
+      "domain": "acme/member-register/v1"
+    },
+    {
+      "document": "workspace-genesis",
+      "domain": "acme/workspace-genesis/v1"
+    },
+    {
+      "document": "member-amend",
+      "domain": "acme/member-amend/v1"
+    },
+    {
+      "document": "grant",
+      "domain": "acme/grant/v1"
+    },
+    {
+      "document": "revoke",
+      "domain": "acme/revoke/v1"
+    },
+    {
+      "document": "role-table",
+      "domain": "acme/role-table/v1"
+    },
+    {
+      "document": "delegate",
+      "domain": "acme/delegate/v1"
+    },
+    {
+      "document": "revoke-delegation",
+      "domain": "acme/revoke-delegation/v1"
+    },
+    {
+      "document": "root-handover",
+      "domain": "acme/root-handover/v1"
+    },
+    {
+      "document": "auth-challenge",
+      "domain": "acme/auth-challenge/v1"
+    },
+    {
+      "document": "vault",
+      "domain": "acme/vault/v1"
+    },
+    {
+      "document": "keywrap",
+      "domain": "acme/keywrap/v1"
+    },
+    {
+      "document": "epoch-key-escrow",
+      "domain": "acme/epoch-key-escrow/v1"
+    },
+    {
+      "document": "keywrap-digest",
+      "domain": "acme/keywrap-digest/v1"
+    }
+  ],
+  "core_count": 15,
+  "ext_examples": [
+    {
+      "document": "ext:retention-sweep",
+      "domain": "acme/ext/retention-sweep/v1"
+    }
+  ],
+  "namespace": "acme",
+  "note": "The fifteen fixed core domains, plus the open ext family. A core domain is \u003cnamespace\u003e/\u003cdocument\u003e/v\u003cn\u003e; an extension class signs under \u003cnamespace\u003e/ext/\u003cname\u003e/v1 instead, one domain per enabled NAME.",
+  "op_class_to_domain": [
+    {
+      "domain": "acme/op/v1",
+      "op_class": "1"
+    },
+    {
+      "domain": "acme/op/v1",
+      "op_class": "128"
+    },
+    {
+      "domain": "acme/op/v1",
+      "op_class": "191"
+    },
+    {
+      "domain": "acme/ext/retention-sweep/v1",
+      "op_class": "197"
+    }
+  ]
+}

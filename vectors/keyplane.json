@@ -1,0 +1,94 @@
+{
+  "content_key_b64": "tAAu2TsSEec5l6gIdgv7TDGyTvsAXIKDN5HPZP0dPBU=",
+  "epoch": 3,
+  "escrow_wrap": {
+    "escrow_wrap_b64": "2eaUeQyLsnzFn/9kwgQAza2zmG4XJo9XIl67eLmufIHOaA/esbmvlOXTOmfNp4I6C/8rGHbP+MH93USgvMYs/PNcFHHfjeCb",
+    "info_hex": "1861636d652f65706f63682d6b65792d657363726f772f7631301edc1250df572c62bc8c4b952d872800000003",
+    "nonce_b64": "2eaUeQyLsnzFn/9kwgQAza2zmG4XJo9X",
+    "wrap_len": 72
+  },
+  "hkdf_salt_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+  "keywrap_digest": {
+    "digest_b64": "s5PJOU0ATuaLMb1fPEXk0FTwclKWJzyvelwMc92PBgM=",
+    "digest_hex": "b393c9394d004ee68b31bd5f3c45e4d054f0725296273caf7a5c0c73dd8f0603",
+    "member_wrap_count": 2,
+    "note": "Sort key is the raw 16-byte member id then the raw 8-byte key id, compared as unsigned bytes — not the UUID text, and not the base64 spelling. member_wraps above is published in that order, which here is the reverse of the labels: an implementation that sorts by label, by insertion order, or by the base64 spelling of either id computes a different digest for this set. The value was cross-checked against both input orderings."
+  },
+  "keywrap_digest_ordering": {
+    "digest_b64": "6peei4Hhe52DxDHw8sHbbBPhPvZiiwNpMEzXwiBSv0Y=",
+    "digest_hex": "ea979e8b81e17b9d83c431f0f2c1db6c13e13ef6628b0369304cd7c22052bf46",
+    "entries_in_correct_sort_order": [
+      {
+        "label": "m1/k1",
+        "member_id": "00112233-4455-6677-8899-aabbccddeeff",
+        "kex_key_id_b64": "AAECAwQFBgc=",
+        "kex_key_id_hex": "0001020304050607",
+        "wrap_b64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+      },
+      {
+        "label": "m1/k2",
+        "member_id": "00112233-4455-6677-8899-aabbccddeeff",
+        "kex_key_id_b64": "0AECAwQFBgc=",
+        "kex_key_id_hex": "d001020304050607",
+        "wrap_b64": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI="
+      },
+      {
+        "label": "m2/k1",
+        "member_id": "d0112233-4455-6677-8899-aabbccddeeff",
+        "kex_key_id_b64": "AAECAwQFBgc=",
+        "kex_key_id_hex": "0001020304050607",
+        "wrap_b64": "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM="
+      }
+    ],
+    "epoch": 7,
+    "escrow_wrap_b64": "7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u",
+    "member_wrap_count": 3,
+    "note": "A set built so that the correct sort key disagrees with the three an implementation might reach for by accident. 0x00 base64-encodes to a leading 'A' (0x41) and 0xd0 to a leading '0' (0x30), so the base64 spelling inverts the pair; 0xd0 sets the top bit, so a UUID type comparing two signed 64-bit halves inverts it too. The wraps are filler of the right length — the digest hashes each and opens none, so only the ordering is under test here.",
+    "orderings": {
+      "base64_spelling_wrong": [
+        "m2/k1",
+        "m1/k2",
+        "m1/k1"
+      ],
+      "raw_unsigned_bytes_correct": [
+        "m1/k1",
+        "m1/k2",
+        "m2/k1"
+      ],
+      "signed_64bit_halves_wrong": [
+        "m2/k1",
+        "m1/k1",
+        "m1/k2"
+      ]
+    }
+  },
+  "master_wrap_key_b64": "k4sLDjwgrCVyImSYDuX+o/7m5qImpSj4MOSyrJm/23w=",
+  "member_wraps": [
+    {
+      "label": "device_b",
+      "member_id": "7281afde-5f19-77b0-d53a-a79194860e76",
+      "kex_key_id_b64": "YMqNAsxxN1w=",
+      "kex_public_key_b64": "VkHQpsxRWUQdXc+CbCNS4GOrKwMQna9q898cqEW6gHA=",
+      "ephemeral_private_key_b64": "vpowt5UMowKwEo8gq/JrRY6sZueC778dp8AIFGuN6lA=",
+      "ephemeral_public_key_b64": "idUi8vzK2bmx8RZ8S/YPsas/1IJoSfm6/QCP8QsTbBI=",
+      "nonce_b64": "CXagA884sC2sIkB/ehiJS7/pfPTJap80",
+      "info_hex": "0f61636d652f6b6579777261702f763189d522f2fccad9b9b1f1167c4bf60fb1ab3fd4826849f9bafd008ff10b136c12301edc1250df572c62bc8c4b952d8728000000037281afde5f1977b0d53aa79194860e7660ca8d02cc71375c",
+      "wrap_len": 104,
+      "wrap_b64": "idUi8vzK2bmx8RZ8S/YPsas/1IJoSfm6/QCP8QsTbBIJdqADzziwLawiQH96GIlLv+l89MlqnzR8ek92OkBDv0BwiDG/+K6mo2QWIVt09hCcsikV81fTzR2q9F9PtqXed4cmQiwi5r0="
+    },
+    {
+      "label": "device_a",
+      "member_id": "b5723227-5643-ab24-dd78-e04be91733fb",
+      "kex_key_id_b64": "Sgzn3DNLwfQ=",
+      "kex_public_key_b64": "QgLDcLWeeDjh8hs5O82Ov9/IpsY2igrjkwQf+QGNsC4=",
+      "ephemeral_private_key_b64": "iVuJcSxFvX1QgqUxPq4na0nSd6TCp0Q6ScaiqWDIPoM=",
+      "ephemeral_public_key_b64": "rGkTzTBXIZsrJm1LQnTDcB3W1xCd4UNHPtR3ba3pxi8=",
+      "nonce_b64": "ZyvX4ubEyCar9JGlwgoNAEyDHRnuFJhM",
+      "info_hex": "0f61636d652f6b6579777261702f7631ac6913cd3057219b2b266d4b4274c3701dd6d7109de143473ed4776dade9c62f301edc1250df572c62bc8c4b952d872800000003b57232275643ab24dd78e04be91733fb4a0ce7dc334bc1f4",
+      "wrap_len": 104,
+      "wrap_b64": "rGkTzTBXIZsrJm1LQnTDcB3W1xCd4UNHPtR3ba3pxi9nK9fi5sTIJqv0kaXCCg0ATIMdGe4UmEzEpNWz9819Ycnsa3ZSeOi+WkMDLZsVSTNlJ94xXtgJBNN42eTwfjYmchyYu7ZoaiI="
+    }
+  ],
+  "note": "Member wrap is 104 bytes: epk || nonce || XChaCha20-Poly1305(K). Escrow wrap is 72 bytes: nonce || XChaCha20-Poly1305(K). HKDF salt is RFC 5869's default — 32 zero bytes, not a zero-length key.",
+  "workspace_id": "301edc12-50df-572c-62bc-8c4b952d8728"
+}
