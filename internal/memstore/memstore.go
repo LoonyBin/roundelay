@@ -21,6 +21,8 @@ import (
 	"sync"
 
 	"github.com/loonybin/roundelay/oplog"
+	"github.com/loonybin/roundelay/profile"
+	"github.com/loonybin/roundelay/wire"
 )
 
 type bindingKey struct {
@@ -39,29 +41,78 @@ type keyKey struct {
 	class  oplog.SigningClass
 }
 
+type keyInterval struct {
+	pk    [32]byte
+	start int64
+	end   int64 // 0 while open; write-once
+}
+
+type roleTableRow struct {
+	at    int64
+	table profile.RoleTable
+}
+
 type state struct {
 	ops        []*oplog.StoredOp // index is seq-1
 	exists     bool
+	genesisAt  int64
+	root       [32]byte
+	hasRoot    bool
 	registered map[[16]byte]bool
 	keyIDs     map[keyKey][][8]byte
 	bindings   map[bindingKey][]interval
+
+	members         map[[16]byte]oplog.MemberRecord
+	controlKeys     map[[16]byte][]keyInterval
+	grants          map[[16]byte]oplog.Grant
+	grantOrder      [][16]byte
+	delegations     map[[16]byte]oplog.Delegation
+	delegationOrder [][16]byte
+	roleTables      []roleTableRow
+	amendIDs        map[[16]byte]bool
+	epochs          []uint32
+	digests         map[uint32][32]byte
+	sessionsEnded   [][16]byte
 }
 
 func newState() *state {
 	return &state{
-		registered: map[[16]byte]bool{},
-		keyIDs:     map[keyKey][][8]byte{},
-		bindings:   map[bindingKey][]interval{},
+		registered:  map[[16]byte]bool{},
+		keyIDs:      map[keyKey][][8]byte{},
+		bindings:    map[bindingKey][]interval{},
+		members:     map[[16]byte]oplog.MemberRecord{},
+		controlKeys: map[[16]byte][]keyInterval{},
+		grants:      map[[16]byte]oplog.Grant{},
+		delegations: map[[16]byte]oplog.Delegation{},
+		amendIDs:    map[[16]byte]bool{},
+		digests:     map[uint32][32]byte{},
 	}
 }
 
 func (s *state) clone() *state {
 	c := &state{
-		exists:     s.exists,
-		registered: maps.Clone(s.registered),
-		keyIDs:     map[keyKey][][8]byte{},
-		bindings:   map[bindingKey][]interval{},
-		ops:        make([]*oplog.StoredOp, len(s.ops)),
+		exists:          s.exists,
+		genesisAt:       s.genesisAt,
+		root:            s.root,
+		hasRoot:         s.hasRoot,
+		registered:      maps.Clone(s.registered),
+		keyIDs:          map[keyKey][][8]byte{},
+		bindings:        map[bindingKey][]interval{},
+		ops:             make([]*oplog.StoredOp, len(s.ops)),
+		members:         maps.Clone(s.members),
+		controlKeys:     map[[16]byte][]keyInterval{},
+		grants:          maps.Clone(s.grants),
+		grantOrder:      slices.Clone(s.grantOrder),
+		delegations:     maps.Clone(s.delegations),
+		delegationOrder: slices.Clone(s.delegationOrder),
+		roleTables:      slices.Clone(s.roleTables),
+		amendIDs:        maps.Clone(s.amendIDs),
+		epochs:          slices.Clone(s.epochs),
+		digests:         maps.Clone(s.digests),
+		sessionsEnded:   slices.Clone(s.sessionsEnded),
+	}
+	for k, v := range s.controlKeys {
+		c.controlKeys[k] = slices.Clone(v)
 	}
 	for k, v := range s.keyIDs {
 		c.keyIDs[k] = slices.Clone(v)
@@ -300,4 +351,274 @@ func (t *tx) Rollback() error {
 	t.closed = true
 	t.ws.mu.Unlock()
 	return nil
+}
+
+// ── Authority's rows ────────────────────────────────────────────────────────
+
+func (t *tx) CurrentRoot() ([32]byte, bool, error) { return t.st.root, t.st.hasRoot, nil }
+
+func (t *tx) SetRoot(pk [32]byte) error {
+	t.st.root, t.st.hasRoot = pk, true
+	return nil
+}
+
+func (t *tx) MarkGenesis(at int64) error {
+	t.st.exists = true
+	t.st.genesisAt = at
+	return nil
+}
+
+func (t *tx) MemberRecord(member [16]byte) (*oplog.MemberRecord, bool, error) {
+	rec, ok := t.st.members[member]
+	if !ok {
+		return nil, false, nil
+	}
+	cp := rec
+	return &cp, true, nil
+}
+
+func (t *tx) PutRegistration(rec oplog.MemberRecord) error {
+	t.st.members[rec.MemberID] = rec
+	t.st.registered[rec.MemberID] = true
+	// Interval zero for every key name is the registration's own.
+	t.st.keyIDs[keyKey{rec.MemberID, oplog.ControlSigning}] = append(
+		t.st.keyIDs[keyKey{rec.MemberID, oplog.ControlSigning}], wire.KeyID(rec.ControlPK[:]))
+	t.st.keyIDs[keyKey{rec.MemberID, oplog.ContentSigning}] = append(
+		t.st.keyIDs[keyKey{rec.MemberID, oplog.ContentSigning}], wire.KeyID(rec.ContentPK[:]))
+	t.st.controlKeys[rec.MemberID] = append(t.st.controlKeys[rec.MemberID],
+		keyInterval{pk: rec.ControlPK, start: rec.RegisteredAt})
+	return nil
+}
+
+// ControlKeyAt resolves the interval whose span contains the position.
+func (t *tx) ControlKeyAt(member [16]byte, at int64) ([32]byte, bool, error) {
+	var out [32]byte
+	for _, iv := range t.st.controlKeys[member] {
+		if at >= iv.start && (iv.end == 0 || at < iv.end) {
+			return iv.pk, true, nil
+		}
+	}
+	return out, false, nil
+}
+
+func (t *tx) GrantByID(id [16]byte) (*oplog.Grant, bool, error) {
+	g, ok := t.st.grants[id]
+	if !ok {
+		return nil, false, nil
+	}
+	cp := g
+	return &cp, true, nil
+}
+
+func (t *tx) LiveGrantsAt(member [16]byte, at int64) ([]oplog.Grant, error) {
+	var out []oplog.Grant
+	for _, g := range t.st.grantOrder {
+		row := t.st.grants[g]
+		if row.Member == member && row.LiveAt(at) {
+			out = append(out, row)
+		}
+	}
+	return out, nil
+}
+
+func (t *tx) HasAnyGrant(member [16]byte) (bool, error) {
+	for _, g := range t.st.grantOrder {
+		if t.st.grants[g].Member == member {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (t *tx) PutGrant(g oplog.Grant) error {
+	if _, dup := t.st.grants[g.GrantID]; dup {
+		return errors.New("memstore: grant id is not unique")
+	}
+	t.st.grants[g.GrantID] = g
+	t.st.grantOrder = append(t.st.grantOrder, g.GrantID)
+	return nil
+}
+
+// CloseGrant writes the end position, which is write-once.
+func (t *tx) CloseGrant(id [16]byte, at int64) error {
+	g, ok := t.st.grants[id]
+	if !ok {
+		return errors.New("memstore: no such grant")
+	}
+	if g.End != 0 {
+		return errors.New("memstore: a grant's end position is write-once")
+	}
+	g.End = at
+	t.st.grants[id] = g
+	return nil
+}
+
+func (t *tx) DelegationByID(id [16]byte) (*oplog.Delegation, bool, error) {
+	d, ok := t.st.delegations[id]
+	if !ok {
+		return nil, false, nil
+	}
+	cp := d
+	return &cp, true, nil
+}
+
+func (t *tx) LiveDelegationsAt(at int64) ([]oplog.Delegation, error) {
+	var out []oplog.Delegation
+	for _, id := range t.st.delegationOrder {
+		if d := t.st.delegations[id]; d.LiveAt(at) {
+			out = append(out, d)
+		}
+	}
+	return out, nil
+}
+
+func (t *tx) IsRegisteredSigningKey(pk [32]byte) (bool, error) {
+	for _, rec := range t.st.members {
+		if rec.ControlPK == pk || rec.ContentPK == pk {
+			return true, nil
+		}
+	}
+	for _, ivs := range t.st.controlKeys {
+		for _, iv := range ivs {
+			if iv.pk == pk {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+func (t *tx) PutDelegation(d oplog.Delegation) error {
+	if _, dup := t.st.delegations[d.DelegationID]; dup {
+		return errors.New("memstore: delegation id is not unique")
+	}
+	t.st.delegations[d.DelegationID] = d
+	t.st.delegationOrder = append(t.st.delegationOrder, d.DelegationID)
+	return nil
+}
+
+func (t *tx) CloseDelegation(id [16]byte, at int64) error {
+	d, ok := t.st.delegations[id]
+	if !ok {
+		return errors.New("memstore: no such delegation")
+	}
+	if d.End != 0 {
+		return errors.New("memstore: a delegation's end position is write-once")
+	}
+	d.End = at
+	t.st.delegations[id] = d
+	return nil
+}
+
+// RoleTableAt is the table carried by the latest role_table op below a position.
+func (t *tx) RoleTableAt(at int64) (profile.RoleTable, bool, error) {
+	var best *roleTableRow
+	for i := range t.st.roleTables {
+		row := &t.st.roleTables[i]
+		if row.at < at && (best == nil || row.at > best.at) {
+			best = row
+		}
+	}
+	if best == nil {
+		return nil, false, nil
+	}
+	return best.table, true, nil
+}
+
+func (t *tx) PutRoleTable(table profile.RoleTable, at int64) error {
+	t.st.roleTables = append(t.st.roleTables, roleTableRow{at: at, table: table})
+	return nil
+}
+
+func (t *tx) AmendIDUsed(id [16]byte) (bool, error) { return t.st.amendIDs[id], nil }
+
+func (t *tx) PutAmend(member, amendID [16]byte, control, content, kex *oplog.KeyChange, at int64) error {
+	t.st.amendIDs[amendID] = true
+	if control != nil {
+		// The interval the amend closes ends at the amend's own position, and the
+		// new one opens there. Every op below keeps verifying under the keys it
+		// was signed with, for ever.
+		ivs := t.st.controlKeys[member]
+		for i := range ivs {
+			if ivs[i].end == 0 {
+				ivs[i].end = at
+			}
+		}
+		t.st.controlKeys[member] = append(ivs, keyInterval{pk: control.PK, start: at})
+		t.st.keyIDs[keyKey{member, oplog.ControlSigning}] = append(
+			t.st.keyIDs[keyKey{member, oplog.ControlSigning}], control.KeyID)
+	}
+	if content != nil {
+		t.st.keyIDs[keyKey{member, oplog.ContentSigning}] = append(
+			t.st.keyIDs[keyKey{member, oplog.ContentSigning}], content.KeyID)
+	}
+	return nil
+}
+
+// CurrentEpoch is the maximum materialised epoch, computed on demand. A stored
+// value would be a cache of that maximum, free to disagree with the records that
+// produced it.
+func (t *tx) CurrentEpoch() (uint32, error) {
+	var max uint32
+	for _, e := range t.st.epochs {
+		if e > max {
+			max = e
+		}
+	}
+	return max, nil
+}
+
+func (t *tx) PutRotate(from, to uint32, digest [32]byte, at int64) error {
+	t.st.epochs = append(t.st.epochs, to)
+	t.st.digests[to] = digest
+	return nil
+}
+
+func (t *tx) LastControlOpBefore(seq int64) (*oplog.StoredOp, bool, error) {
+	for i := len(t.st.ops) - 1; i >= 0; i-- {
+		op := t.st.ops[i]
+		if op.Seq < seq && op.Class == wire.ClassControl {
+			return op, true, nil
+		}
+	}
+	return nil, false, nil
+}
+
+// EndDeviceSessions is the cascade. Sessions live outside this store, so what is
+// recorded here is that it happened — which is what a test can observe and what
+// a real deployment would fan out to its token table and its socket registry.
+func (t *tx) EndDeviceSessions(member [16]byte) error {
+	t.st.sessionsEnded = append(t.st.sessionsEnded, member)
+	return nil
+}
+
+func (t *tx) NextSeq() (int64, error) { return int64(len(t.st.ops)) + 1, nil }
+
+// SessionsEnded reports the devices whose sessions the cascade closed, for
+// assertions.
+func (s *Store) SessionsEnded(id [16]byte) [][16]byte {
+	w := s.workspace(id)
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return slices.Clone(w.st.sessionsEnded)
+}
+
+// Grants returns the committed grants, for assertions.
+func (s *Store) Grants(id [16]byte) []oplog.Grant {
+	w := s.workspace(id)
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	out := make([]oplog.Grant, 0, len(w.st.grantOrder))
+	for _, g := range w.st.grantOrder {
+		out = append(out, w.st.grants[g])
+	}
+	return out
+}
+
+// Root returns the committed current Root, for assertions.
+func (s *Store) Root(id [16]byte) ([32]byte, bool) {
+	w := s.workspace(id)
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.st.root, w.st.hasRoot
 }

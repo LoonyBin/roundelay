@@ -490,3 +490,38 @@ func TestTipIsThePayloadHash(t *testing.T) {
 func profileEntry(classes []byte, pruneTypes []string) profile.RoleEntry {
 	return profile.RoleEntry{Classes: classes, PruneTypes: pruneTypes}
 }
+
+// The positional verdict, tested where it is stated rather than left to be
+// unreachable by accident of ordering elsewhere.
+//
+// Authorised iff granted_seq < S and (revoked_by_seq is null or S <
+// revoked_by_seq). Both bounds are strict, so an op at the grant's own position
+// is not authorised by it and an op at the revoke's own position is not either.
+func TestGrantWindowBounds(t *testing.T) {
+	g := oplog.Grant{Start: 13, End: 18}
+	for _, c := range []struct {
+		seq  int64
+		live bool
+	}{
+		{12, false}, // below
+		{13, false}, // the grant's own position
+		{14, true}, {15, true}, {16, true}, {17, true},
+		{18, false}, // the revoke's own position
+		{19, false}, // above
+	} {
+		if got := g.LiveAt(c.seq); got != c.live {
+			t.Errorf("LiveAt(%d) = %v, want %v", c.seq, got, c.live)
+		}
+	}
+
+	open := oplog.Grant{Start: 13}
+	if open.LiveAt(13) || !open.LiveAt(14) || !open.LiveAt(1<<62) {
+		t.Error("an unrevoked grant is live from strictly above its own position, for ever")
+	}
+
+	// A delegation carries the same verdict, in both directions.
+	d := oplog.Delegation{Start: 13, End: 18}
+	if d.LiveAt(13) || !d.LiveAt(14) || !d.LiveAt(17) || d.LiveAt(18) {
+		t.Error("a delegation's window is not the grant's window")
+	}
+}

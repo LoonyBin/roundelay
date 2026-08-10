@@ -8,6 +8,8 @@ package oplog
 import (
 	"context"
 
+	"github.com/loonybin/roundelay/profile"
+
 	"github.com/loonybin/roundelay/codes"
 )
 
@@ -137,6 +139,11 @@ type Tx interface {
 	// nothing.
 	AuthorHead(member [16]byte) (uint64, error)
 
+	// NextSeq is the position the next op will occupy. An op under judgement is
+	// judged as though it landed there, which is what granted_seq < S means for
+	// an op that is about to be stored.
+	NextSeq() (int64, error)
+
 	// ExtBindingAt resolves the NAME in force for a member and an extension
 	// class at a position — the interval whose span contains it.
 	ExtBindingAt(member [16]byte, class byte, seq int64) (string, bool, error)
@@ -156,6 +163,8 @@ type Tx interface {
 	// OpenExtBinding and CloseExtBinding move a member's binding intervals.
 	OpenExtBinding(member [16]byte, class byte, name string, at int64) error
 	CloseExtBinding(member [16]byte, class byte, at int64) error
+
+	AuthorityTx
 
 	Commit() error
 	Rollback() error
@@ -189,4 +198,112 @@ type Authority interface {
 	// *is* that op is a fact about its class, its payload type and its
 	// certificate, none of which stage 0 has read.
 	EstablishesAccess(op Op) bool
+}
+
+// ── Authority's rows ────────────────────────────────────────────────────────
+//
+// The Log does not read any of these. They live on the same transaction because
+// there is one store and one retained-state table, and a batch's walk must see
+// one consistent snapshot across all of it.
+
+// MemberRecord is a registration accepted into this Workspace's log.
+type MemberRecord struct {
+	MemberID     [16]byte
+	Kind         string
+	HolderRef    [32]byte
+	ControlPK    [32]byte
+	ContentPK    [32]byte
+	KexPK        [32]byte
+	RegisteredAt int64
+}
+
+// Grant is one permission, with the positional window it is live over.
+//
+// Authorised iff granted_seq < S and (revoked_by_seq is null or S <
+// revoked_by_seq). Anchored on log position and not on the certificate's clock:
+// clock anchoring would let a revoked device backdate ops to slip under the
+// boundary, because it controls its own clock but not where the server puts its
+// op.
+type Grant struct {
+	GrantID       [16]byte
+	Member        [16]byte
+	Role          string
+	Granter       [16]byte
+	GranterIsRoot bool
+	Start         int64
+	End           int64 // 0 while live; write-once
+}
+
+// LiveAt applies the positional verdict.
+func (g Grant) LiveAt(seq int64) bool {
+	return g.Start < seq && (g.End == 0 || seq < g.End)
+}
+
+// Delegation is a key holding root authority over a span of positions.
+type Delegation struct {
+	DelegationID [16]byte
+	PK           [32]byte
+	Start        int64
+	End          int64 // 0 while live; write-once
+}
+
+// LiveAt applies the same positional verdict a grant has.
+func (d Delegation) LiveAt(seq int64) bool {
+	return d.Start < seq && (d.End == 0 || seq < d.End)
+}
+
+// KeyChange is one key an amendment moves.
+type KeyChange struct {
+	PK    [32]byte
+	KeyID [8]byte
+}
+
+// AuthorityTx is the half of a transaction the Authority layer reads and writes.
+type AuthorityTx interface {
+	// CurrentRoot is the key every certificate is checked against first. It is
+	// the founding Root until a handover moves it.
+	CurrentRoot() ([32]byte, bool, error)
+	SetRoot(pk [32]byte) error
+	MarkGenesis(at int64) error
+
+	MemberRecord(member [16]byte) (*MemberRecord, bool, error)
+	PutRegistration(rec MemberRecord) error
+
+	// ControlKeyAt is the control signing key in force for a device at a
+	// position — its registration's, until a member_amend installs another.
+	ControlKeyAt(member [16]byte, at int64) ([32]byte, bool, error)
+
+	GrantByID(id [16]byte) (*Grant, bool, error)
+	LiveGrantsAt(member [16]byte, at int64) ([]Grant, error)
+	HasAnyGrant(member [16]byte) (bool, error)
+	PutGrant(g Grant) error
+	CloseGrant(id [16]byte, at int64) error
+
+	DelegationByID(id [16]byte) (*Delegation, bool, error)
+	LiveDelegationsAt(at int64) ([]Delegation, error)
+	IsRegisteredSigningKey(pk [32]byte) (bool, error)
+	PutDelegation(d Delegation) error
+	CloseDelegation(id [16]byte, at int64) error
+
+	// RoleTableAt is the table carried by the latest role_table op below a
+	// position. False means none has landed, and the profile's initial table
+	// stands.
+	RoleTableAt(at int64) (profile.RoleTable, bool, error)
+	PutRoleTable(t profile.RoleTable, at int64) error
+
+	AmendIDUsed(id [16]byte) (bool, error)
+	PutAmend(member, amendID [16]byte, control, content, kex *KeyChange, at int64) error
+
+	CurrentEpoch() (uint32, error)
+	PutRotate(from, to uint32, digest [32]byte, at int64) error
+
+	// LastControlOpBefore is what the control tip is computed from. Derived, not
+	// stored: a stored tip is a cache of a function of the log, free to drift
+	// from it.
+	LastControlOpBefore(seq int64) (*StoredOp, bool, error)
+
+	// EndDeviceSessions runs the cascade a lost last grant and a control amend
+	// both trigger: every refresh token scoped to that device is revoked, and
+	// every live signal socket it holds here closes with 4403.
+	EndDeviceSessions(member [16]byte) error
 }
