@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/loonybin/roundelay/authority"
@@ -546,3 +547,45 @@ const (
 	uuidC = "22222222-3333-4444-5555-666666666666"
 	uuidD = "33333333-4444-5555-6666-777777777777"
 )
+
+// The access gate is asked only of a Workspace that has an accepted genesis.
+//
+// Before one exists there is nothing to be registered in, so a write there is
+// stage 2's to answer. Asking the gate first makes it contradict itself — the
+// device about to found the Workspace can never be registered in it — and turns
+// every pre-genesis write into no_registration, which tells a founder to go and
+// get a registration that cannot be issued yet.
+//
+// Every other test in this file founds first, which is how this survived until
+// a suite that drives the real transport tried the pre-genesis case.
+func TestPreGenesisWriteIsStageTwosToAnswer(t *testing.T) {
+	w := newWorld(t)
+	stranger := newDevice("stranger")
+	_, r := w.post(stranger.id, w.contentOp(stranger))
+	wantRefusal(t, r, codes.WorkspaceNotCreated)
+
+	// A registration is the one control type that answers for the Workspace, and
+	// it must carry a well-formed link to get that far: the zero-link rule is
+	// shape, asked either way, and a zero link on a non-genesis is a break with
+	// no expected value to name.
+	w.pending = zeroLink
+	_, r = w.post(stranger.id, w.register(rootKey(), stranger))
+	wantRefusal(t, r, codes.ControlChainBreak)
+	if _, ok := r.Fields["expected_prev_control_hash"]; ok {
+		t.Errorf("there is no tip to name before a genesis: %v", r.Fields)
+	}
+
+	w.pending = strings.Repeat("22", 32)
+	_, r = w.post(stranger.id, w.register(rootKey(), stranger))
+	wantRefusal(t, r, codes.WorkspaceNotCreated)
+
+	// Every other control type answers on the author's own sequence instead: its
+	// first op must be the one that registers it, and pre-genesis it has none.
+	// A fresh device, because the rule is about an author's *first* op and this
+	// world's counter advances whether or not the post was accepted.
+	newcomer := newDevice("newcomer")
+	w.pending = strings.Repeat("33", 32)
+	_, r = w.post(newcomer.id, w.grant(rootKey(), newcomer, authority.Principal{Root: true},
+		newDevice("nobody"), "owner", "11111111-1111-1111-1111-111111111111"))
+	wantRefusal(t, r, codes.MemberRegisterNotFirst)
+}

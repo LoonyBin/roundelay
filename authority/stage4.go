@@ -34,24 +34,41 @@ func (a *Authority) Stage4(ctx context.Context, tx oplog.Tx, op oplog.Op, at int
 		return "", r
 	}
 
+	// Above authority, with the chain link and for the same reason: which op an
+	// author wrote first is a fact about the log's shape, not about permission.
+	// Below it the rule is unreachable in the one place §10 names it — before a
+	// genesis there is no Root to satisfy the root-signed bypass and no grant to
+	// pass the role check, so every op that should answer here answers
+	// no_live_grant instead.
+	if r := a.registerFirst(tx, p, op, at); r != nil {
+		return "", r
+	}
+
 	// A payload signed under root authority is accepted regardless of the
 	// author's permissions. The bypass has to carry to delegates too: a device a
 	// delegate has just certified holds no grant in the Workspace it is joining —
 	// that is what joining means — so a literal reading of "Root" would make the
 	// one op the delegation exists to authorise the one op the device could not
 	// post.
-	rootSigned, err := a.isRootSigned(tx, p, at)
-	if err != nil {
-		return "", storeDown()
-	}
-	if !rootSigned {
-		if r := a.authorityRole(tx, op.Header().AuthorMemberID, at); r != nil {
-			return "", r
+	//
+	// Neither sequence that establishes access carries an authority check, and
+	// neither could: the author of a genesis, and the author of the registration
+	// that admits it, hold nothing in a Workspace they are joining or making.
+	// Asking anyway costs the real verdict — a registration whose certificate is
+	// signed by the wrong key answers no_live_grant, which is true, useless, and
+	// hides the one fact the joiner needs. The access gate states this exemption
+	// for itself (§3.2); the role check needs the same one for the same reason.
+	establishes := p.Type == wire.CtlWorkspaceGenesis || p.Type == wire.CtlMemberRegister
+	if !establishes {
+		rootSigned, err := a.isRootSigned(tx, p, at)
+		if err != nil {
+			return "", storeDown()
 		}
-	}
-
-	if r := a.registerFirst(tx, p, op, at); r != nil {
-		return "", r
+		if !rootSigned {
+			if r := a.authorityRole(tx, op.Header().AuthorMemberID, at); r != nil {
+				return "", r
+			}
+		}
 	}
 
 	switch p.Type {
@@ -195,17 +212,19 @@ func (a *Authority) authorityRole(tx oplog.Tx, member [16]byte, at int64) *oplog
 // control op that registers it.
 func (a *Authority) registerFirst(tx oplog.Tx, p *ControlPayload, op oplog.Op, _ int64) *oplog.Refusal {
 	seq := op.Header().AuthorSeq
-	registers := p.Type == wire.CtlWorkspaceGenesis || p.Type == wire.CtlMemberRegister
-	bad := refuse(unproc, codes.MemberRegisterNotFirst, map[string]any{"author_seq": seq})
-
-	if registers {
-		if seq != 1 {
-			return bad
-		}
+	if p.Type == wire.CtlWorkspaceGenesis || p.Type == wire.CtlMemberRegister {
+		// The other half — a registering op that is not at author_seq 1 — is not
+		// shared, whatever "one rule spans types" suggests. Both types that carry
+		// it place it inside their own numbered sequence, below a verdict that
+		// would otherwise never be reachable: genesis_not_first at row 1 of the
+		// genesis table, workspace_not_created at row 1 of the registration's.
+		// Checking it here answers member_register_not_first for a second genesis
+		// into a Workspace that already exists, which is a true statement about
+		// the author's sequence and the wrong answer to the question asked.
 		return nil
 	}
 	if seq == 1 {
-		return bad
+		return refuse(unproc, codes.MemberRegisterNotFirst, map[string]any{"author_seq": seq})
 	}
 	return nil
 }
@@ -329,12 +348,18 @@ func (a *Authority) register(tx oplog.Tx, p *ControlPayload, op oplog.Op, at int
 	}
 	h := op.Header()
 
+	// Row 1. Nothing about the op can be judged against a Workspace that does not
+	// exist: there is no root authority to verify the certificate under.
 	exists, err := tx.WorkspaceExists()
 	if err != nil {
 		return storeDown()
 	}
 	if !exists {
 		return refuse(http.StatusConflict, codes.WorkspaceNotCreated, nil)
+	}
+	// Row 2, which the shared sequence leaves to each registering type.
+	if seq := h.AuthorSeq; seq != 1 {
+		return refuse(unproc, codes.MemberRegisterNotFirst, map[string]any{"author_seq": seq})
 	}
 	keys, err := rootAuthorityAt(tx, at, true)
 	if err != nil {

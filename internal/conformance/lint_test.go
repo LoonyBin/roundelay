@@ -197,3 +197,63 @@ items:
 }
 
 func writeFile(path, body string) error { return os.WriteFile(path, []byte(body), 0o644) }
+
+// ── the bindings lint ───────────────────────────────────────────────────────
+
+func bindingList() *conformance.Checklist {
+	return &conformance.Checklist{Items: []conformance.Item{
+		{ID: "CONF-A-001", Observable: "black-box", Test: "tests/conformance/test_a.py::test_one"},
+		{ID: "CONF-A-002", Observable: "white-box", Test: "oplog/oplog_test.go::TestTwo"},
+		{ID: "CONF-A-003", Observable: "black-box", Test: "tests/conformance/test_a.py::test_three"},
+	}}
+}
+
+func TestBindingsAcceptsWhatTheSuiteCollected(t *testing.T) {
+	// Collected node ids are suite-relative and carry pytest's parametrisation
+	// tag; the column is repository-relative and names the function.
+	r := bindingList().Bindings(&conformance.Bindings{Items: map[string][]string{
+		"CONF-A-001": {"test_a.py::test_one[128-encrypted_control_op]", "test_a.py::test_one[129-x]"},
+	}})
+	if !r.OK() {
+		t.Fatalf("expected agreement, got %v", r.Problems)
+	}
+	if !strings.Contains(r.Checked, "1 of 3") || !strings.Contains(r.Checked, "2 described only") {
+		t.Errorf("the count is the point of the lint: %q", r.Checked)
+	}
+}
+
+func TestBindingsCatchesDrift(t *testing.T) {
+	r := bindingList().Bindings(&conformance.Bindings{Items: map[string][]string{
+		"CONF-A-001": {"test_a.py::test_renamed"},
+	}})
+	if len(r.Problems) != 1 || !strings.Contains(r.Problems[0], "test_renamed") {
+		t.Fatalf("a renamed test must be reported: %v", r.Problems)
+	}
+}
+
+func TestBindingsCatchesAnOrphan(t *testing.T) {
+	// A typo in a marker otherwise reads as coverage of something.
+	r := bindingList().Bindings(&conformance.Bindings{Items: map[string][]string{
+		"CONF-A-004": {"test_a.py::test_four"},
+	}})
+	if len(r.Problems) != 1 || !strings.Contains(r.Problems[0], "no such item") {
+		t.Fatalf("an unknown item id must be reported: %v", r.Problems)
+	}
+}
+
+// The observability lint's mechanical half: a black-box item may only be
+// decided inside the suite, because everywhere else has a store handle in reach.
+func TestObservabilityRefusesABlackBoxItemDecidedInGo(t *testing.T) {
+	list := bindingList()
+	list.Items[0].Test = "oplog/oplog_test.go::TestOne"
+	r := list.Observability()
+	if len(r.Problems) != 1 || !strings.Contains(r.Problems[0], "outside tests/conformance/") {
+		t.Fatalf("black-box decided in a Go package must be reported: %v", r.Problems)
+	}
+	// A white-box item decided there is the normal case, and the row that just
+	// has not been placed yet is caught by Structure, not here.
+	list.Items[0].Observable = "white-box"
+	if r := list.Observability(); !r.OK() {
+		t.Fatalf("white-box in Go is the normal case: %v", r.Problems)
+	}
+}

@@ -169,26 +169,37 @@ var internalVocabulary = []struct {
 	{"frozen wrap vectors", "asserted against a fixture rather than against a response"},
 }
 
-// Observability is the second named lint, and this runner cannot decide the
-// whole of it.
+// Observability is the second named lint, and it has two halves.
 //
-// As stated — "every black-box item is decidable from HTTP and WebSocket traffic
-// alone" — it is a property of the test that implements an item, not of the row
-// that describes it: the mechanical form is "the test bound to this item reaches
-// for no fixture but the transport". That check belongs in the suite, and there
-// is no suite yet.
+// As stated — "every black-box item is decidable from HTTP and WebSocket
+// traffic alone" — it is a property of the test that implements an item rather
+// than of the row that describes it. The mechanical form is "the test bound to
+// this item reaches for no fixture but the transport", and that became
+// decidable when the suite arrived: the conftest under SuiteRoot publishes one
+// fixture, the server's base URL, and builds every other out of HTTP calls
+// against it. So an item decided in there satisfies the property by
+// construction, and an item decided anywhere else cannot, because everywhere
+// else in this repository is a Go package with a store handle in reach. That is
+// the second half, and it holds over every row rather than only the bound ones,
+// because the column is a claim about where the item will be decided.
 //
-// What is checkable here is the failure mode the lint exists to catch: an item
-// marked black-box whose requirement is written in the language of a fact no
-// observer holds. It catches the mislabelling; it cannot certify the rest.
+// The first half is the failure mode the lint was written for: an item marked
+// black-box whose requirement is written in the language of a fact no observer
+// holds. Together they catch both the mislabelled row and the row that quietly
+// plans to settle a black-box requirement with a store handle.
 func (c *Checklist) Observability() Result {
 	r := Result{
 		Lint:    "observability",
-		Checked: "no black-box item rests on server-side state with no observable evidence",
+		Checked: "every black-box item speaks of observable evidence, and is decided in " + SuiteRoot,
 	}
 	for _, it := range c.Items {
 		if it.Observable != "black-box" {
 			continue
+		}
+		if test := strings.TrimSpace(it.Test); !strings.HasPrefix(test, SuiteRoot) {
+			r.Problems = append(r.Problems, fmt.Sprintf(
+				"%s is black-box but is decided by %s, which is outside %s and so has more than the transport in reach",
+				it.ID, test, SuiteRoot))
 		}
 		// An item that cites a code has observable evidence by construction: a
 		// refusal is traffic. So the net is only cast over items with none —

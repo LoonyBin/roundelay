@@ -68,7 +68,7 @@ items:
   subject: server
   observable: black-box
   codes: [unknown_request_field]
-  test: tests/conformance/test_versioning.py::test_unknown_query_param
+  test: tests/conformance/test_versioning.py::test_unknown_query_parameter
 
 - id: CONF-VER-006
   requirement: >
@@ -79,7 +79,7 @@ items:
   subject: server
   observable: black-box
   codes: [unknown_request_field, invalid_credential]
-  test: tests/conformance/test_versioning.py::test_unknown_field_ordering
+  test: tests/conformance/test_versioning.py::test_check_order
 
 - id: CONF-VER-007
   requirement: A duplicate JSON object key is refused 422 malformed_request, never resolved last-wins.
@@ -87,7 +87,7 @@ items:
   subject: server
   observable: black-box
   codes: [malformed_request]
-  test: tests/conformance/test_versioning.py::test_duplicate_json_key
+  test: tests/conformance/test_versioning.py::test_duplicate_key
 
 - id: CONF-VER-008
   requirement: >
@@ -98,7 +98,7 @@ items:
   subject: server
   observable: black-box
   codes: [malformed_request]
-  test: tests/conformance/test_scalars.py::test_scalar_types
+  test: tests/conformance/test_versioning.py::test_wrong_scalar_types
 
 - id: CONF-VER-009
   requirement: >
@@ -129,7 +129,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_health.py::test_health_shape
+  test: tests/conformance/test_health.py::test_health_document
 
 - id: CONF-HEALTH-002
   requirement: GET /health succeeds while the backing store is unavailable.
@@ -195,7 +195,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_health.py::test_op_classes_covers_all_three_ranges
+  test: tests/conformance/test_health.py::test_op_classes_covers_every_range
 
 # ── Wire format ──────────────────────────────────────────────────────────────
 
@@ -208,7 +208,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_wire.py::test_envelope_roundtrip_opaque
+  test: tests/conformance/test_oplog.py::test_ops_are_served_back_byte_identically
 
 - id: CONF-WIRE-002
   requirement: >
@@ -220,7 +220,7 @@ items:
   subject: server
   observable: black-box
   codes: [unsupported_suite, unsupported_op_class, workspace_mismatch, author_member_mismatch]
-  test: tests/conformance/test_wire.py::test_header_offsets_by_probe
+  test: tests/conformance/test_oplog.py::test_header_offsets_are_honoured
 
 - id: CONF-WIRE-003
   requirement: >
@@ -231,7 +231,7 @@ items:
   subject: server
   observable: black-box
   codes: [truncated_envelope, envelope_too_short]
-  test: tests/conformance/test_wire.py::test_length_floors
+  test: tests/conformance/test_oplog.py::test_length_floors
 
 - id: CONF-WIRE-004
   requirement: >
@@ -244,7 +244,7 @@ items:
   subject: server
   observable: black-box
   codes: [encrypted_control_op, encrypted_prune_op, encrypted_server_read_op, unsupported_suite]
-  test: tests/conformance/test_wire.py::test_forbidden_pairs
+  test: tests/conformance/test_oplog.py::test_sealed_server_read_classes
 
 - id: CONF-WIRE-005
   requirement: >
@@ -257,7 +257,7 @@ items:
   subject: server
   observable: black-box
   codes: [unsupported_op_class, ext_class_not_enabled]
-  test: tests/conformance/test_wire.py::test_served_op_classes
+  test: tests/conformance/test_oplog.py::test_unassigned_classes
 
 - id: CONF-WIRE-006
   requirement: A base64 value with a non-alphabet character or missing padding is refused, never repaired.
@@ -265,7 +265,7 @@ items:
   subject: server
   observable: black-box
   codes: [malformed_request, malformed_sign_pk, malformed_base64]
-  test: tests/conformance/test_wire.py::test_strict_base64
+  test: tests/conformance/test_oplog.py::test_base64_is_never_repaired
 
 - id: CONF-WIRE-007
   requirement: >
@@ -275,7 +275,7 @@ items:
   subject: server
   observable: black-box
   codes: [malformed_control_payload, malformed_prune_payload]
-  test: tests/conformance/test_wire.py::test_canonical_spellings
+  test: tests/conformance/test_oplog.py::test_non_canonical_uuid_spellings
 
 - id: CONF-WIRE-008
   requirement: >
@@ -329,7 +329,7 @@ items:
   subject: server
   observable: black-box
   codes: [unsupported_op_class]
-  test: tests/conformance/test_wire.py::test_extension_range_default_off
+  test: tests/conformance/test_oplog.py::test_the_extension_range_is_disabled_by_default
 
 - id: CONF-WIRE-013
   requirement: >
@@ -459,7 +459,7 @@ items:
   subject: server
   observable: black-box
   codes: [unsupported_suite, unsupported_op_class, envelope_too_short, truncated_envelope]
-  test: tests/conformance/test_wire.py::test_selectors_precede_the_floor
+  test: tests/conformance/test_oplog.py::test_selector_bytes_resolve_before_the_floor
 
 # ── Credentials ──────────────────────────────────────────────────────────────
 
@@ -562,7 +562,7 @@ items:
   subject: server
   observable: black-box
   codes: [no_registration]
-  test: tests/conformance/test_authz_matrix.py::test_access_gate_first
+  test: tests/conformance/test_authority.py::test_unregistered_device_is_refused
 
 - id: CONF-AUTHZ-013
   requirement: >
@@ -572,7 +572,7 @@ items:
   subject: server
   observable: black-box
   codes: [no_registration]
-  test: tests/conformance/test_authz_matrix.py::test_access_is_per_workspace
+  test: tests/conformance/test_authority.py::test_the_gate_is_per_workspace
 
 - id: CONF-AUTHZ-014
   requirement: >
@@ -585,7 +585,7 @@ items:
   subject: server
   observable: black-box
   codes: [no_registration]
-  test: tests/conformance/test_authz_matrix.py::test_first_op_exempt
+  test: tests/conformance/test_authority.py::test_the_exemption_reaches_the_first_op_only
 
 - id: CONF-AUTHZ-015
   requirement: >
@@ -596,7 +596,7 @@ items:
   subject: server
   observable: black-box
   codes: [bad_root_signature]
-  test: tests/conformance/test_authz_matrix.py::test_first_op_still_certified
+  test: tests/conformance/test_authority.py::test_the_exemption_is_not_a_hole
 
 # ── Shared Workspaces ────────────────────────────────────────────────────────
 
@@ -650,7 +650,7 @@ items:
   subject: server
   observable: black-box
   codes: [no_live_grant]
-  test: tests/conformance/test_authz_matrix.py::test_pregrant_vs_revoked
+  test: tests/conformance/test_authority.py::test_revocation_leaves_the_registration
 
 - id: CONF-AUTHZ-004
   requirement: >
@@ -670,7 +670,7 @@ items:
   subject: server
   observable: black-box
   codes: [no_live_grant]
-  test: tests/conformance/test_authz_matrix.py::test_root_signed_bypass_is_narrow
+  test: tests/conformance/test_authority.py::test_a_root_signed_payload_needs_no_grant
 
 - id: CONF-AUTHZ-006
   requirement: >
@@ -680,7 +680,7 @@ items:
   subject: server
   observable: black-box
   codes: [role_forbids_op_class]
-  test: tests/conformance/test_authz_matrix.py::test_role_matrix
+  test: tests/conformance/test_authority.py::test_role_forbids_op_class
 
 - id: CONF-AUTHZ-007
   requirement: >
@@ -700,7 +700,7 @@ items:
   subject: server
   observable: black-box
   codes: [owner_grant_requires_root]
-  test: tests/conformance/test_control.py::test_owner_mint_ceiling
+  test: tests/conformance/test_authority.py::test_an_owner_grant_requires_root
 
 - id: CONF-AUTHZ-009
   requirement: An owner Grant revoked by anything but root is refused owner_revoke_requires_root.
@@ -708,7 +708,7 @@ items:
   subject: server
   observable: black-box
   codes: [owner_revoke_requires_root]
-  test: tests/conformance/test_control.py::test_owner_revoke_ceiling
+  test: tests/conformance/test_authority.py::test_an_owner_revoke_requires_root
 
 - id: CONF-AUTHZ-010
   requirement: An unrecognised role token is refused unknown_role, never ignored.
@@ -716,7 +716,7 @@ items:
   subject: server
   observable: black-box
   codes: [unknown_role]
-  test: tests/conformance/test_control.py::test_unknown_role
+  test: tests/conformance/test_authority.py::test_an_unknown_role_is_refused
 
 - id: CONF-AUTHZ-011
   requirement: A member_kind outside the profile's set is refused unknown_member_kind.
@@ -724,7 +724,7 @@ items:
   subject: server
   observable: black-box
   codes: [unknown_member_kind]
-  test: tests/conformance/test_control.py::test_unknown_member_kind
+  test: tests/conformance/test_authority.py::test_an_unknown_member_kind_is_refused
 
 - id: CONF-AUTHZ-012
   requirement: >
@@ -856,7 +856,7 @@ items:
   subject: server
   observable: black-box
   codes: [author_member_mismatch]
-  test: tests/conformance/test_oplog.py::test_batch_atomicity
+  test: tests/conformance/test_oplog.py::test_a_refused_batch_leaves_nothing
 
 - id: CONF-LOG-002
   requirement: >
@@ -868,7 +868,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_oplog.py::test_enrolment_batch
+  test: tests/conformance/test_oplog.py::test_founding_batch_commits_whole
 
 - id: CONF-LOG-003
   requirement: A batch of [rotate to N+1, content at N+1] commits whole.
@@ -896,7 +896,7 @@ items:
   subject: server
   observable: black-box
   codes: [prune_targets_empty]
-  test: tests/conformance/test_oplog.py::test_stages_two_to_four_are_per_op
+  test: tests/conformance/test_oplog.py::test_stages_two_to_four_run_in_arrival_order
 
 - id: CONF-LOG-006
   requirement: >
@@ -907,7 +907,7 @@ items:
   subject: server
   observable: black-box
   codes: [batch_too_large, no_registration]
-  test: tests/conformance/test_oplog.py::test_batch_ceiling
+  test: tests/conformance/test_oplog.py::test_stage_zero_refusals_name_no_op
 
 - id: CONF-LOG-007
   requirement: "An empty ops array returns {\"results\": []} and changes nothing."
@@ -926,7 +926,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_oplog.py::test_idempotency
+  test: tests/conformance/test_oplog.py::test_repeats_are_free
 
 - id: CONF-LOG-009
   requirement: >
@@ -947,7 +947,7 @@ items:
   subject: server
   observable: black-box
   codes: [author_chain_conflict]
-  test: tests/conformance/test_oplog.py::test_author_chain
+  test: tests/conformance/test_oplog.py::test_author_chain_gap
 
 - id: CONF-LOG-011
   requirement: >
@@ -995,7 +995,7 @@ items:
   subject: server
   observable: black-box
   codes: [malformed_request]
-  test: tests/conformance/test_oplog.py::test_query_validation
+  test: tests/conformance/test_oplog.py::test_read_parameters_are_never_clamped
 
 - id: CONF-LOG-016
   requirement: A pre-genesis pull returns an empty page; a pre-genesis content POST answers 409 workspace_not_created.
@@ -1003,7 +1003,7 @@ items:
   subject: server
   observable: black-box
   codes: [workspace_not_created]
-  test: tests/conformance/test_oplog.py::test_pregenesis_asymmetry
+  test: tests/conformance/test_oplog.py::test_pre_genesis
 
 - id: CONF-LOG-017
   requirement: >
@@ -1016,7 +1016,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_oplog.py::test_non_validation_list
+  test: tests/conformance/test_oplog.py::test_the_server_verifies_less_than_it_stores
 
 - id: CONF-LOG-018
   requirement: >
@@ -1028,7 +1028,7 @@ items:
   subject: server
   observable: black-box
   codes: [key_epoch_stale, unsupported_op_class]
-  test: tests/conformance/test_oplog.py::test_idempotency_lookup_placement
+  test: tests/conformance/test_oplog.py::test_the_lookup_sits_above_stage_two
 
 # ── Control ops ──────────────────────────────────────────────────────────────
 
@@ -1076,7 +1076,7 @@ items:
   subject: server
   observable: black-box
   codes: [control_chain_break, genesis_not_first]
-  test: tests/conformance/test_control.py::test_zero_link_rule
+  test: tests/conformance/test_authority.py::test_the_zero_link_belongs_to_the_genesis_alone
 
 - id: CONF-CTL-004
   requirement: >
@@ -1086,7 +1086,7 @@ items:
   subject: server
   observable: black-box
   codes: [genesis_not_first]
-  test: tests/conformance/test_races.py::test_concurrent_genesis
+  test: tests/conformance/test_authority.py::test_a_genesis_is_once_and_first
 
 - id: CONF-CTL-005
   requirement: >
@@ -1105,7 +1105,7 @@ items:
   subject: server
   observable: black-box
   codes: [member_register_not_first]
-  test: tests/conformance/test_control.py::test_register_must_be_first
+  test: tests/conformance/test_authority.py::test_an_authors_first_op_must_be_its_registration
 
 - id: CONF-CTL-017
   requirement: >
@@ -1167,7 +1167,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_control.py::test_no_cascade
+  test: tests/conformance/test_authority.py::test_revocation_is_grant_granular
 
 - id: CONF-CTL-012
   requirement: >
@@ -1179,7 +1179,7 @@ items:
   subject: server
   observable: black-box
   codes: [control_chain_break]
-  test: tests/conformance/test_control.py::test_chain_is_linear
+  test: tests/conformance/test_authority.py::test_the_control_chain_is_linear
 
 - id: CONF-CTL-013
   requirement: >
@@ -1200,7 +1200,7 @@ items:
   subject: server
   observable: black-box
   codes: [control_chain_break]
-  test: tests/conformance/test_control.py::test_repeat_not_judged_against_tip
+  test: tests/conformance/test_authority.py::test_a_stale_repeat_is_a_duplicate_not_a_break
 
 - id: CONF-CTL-015
   requirement: >
@@ -1213,7 +1213,7 @@ items:
   subject: server
   observable: black-box
   codes: [control_chain_break, workspace_not_created]
-  test: tests/conformance/test_control.py::test_pregenesis_chain_check
+  test: tests/conformance/test_authority.py::test_before_a_genesis_the_tip_is_not_asked
 
 - id: CONF-CTL-018
   requirement: >
@@ -1225,7 +1225,7 @@ items:
   subject: server
   observable: black-box
   codes: [bad_root_signature]
-  test: tests/conformance/test_control.py::test_role_table_is_root_only
+  test: tests/conformance/test_authority.py::test_a_role_table_is_roots_own
 
 - id: CONF-CTL-019
   requirement: >
@@ -1242,7 +1242,7 @@ items:
   subject: server
   observable: black-box
   codes: [malformed_role_table, cert_workspace_mismatch, bad_root_signature]
-  test: tests/conformance/test_control.py::test_role_table_shape_rules
+  test: tests/conformance/test_authority.py::test_malformed_role_tables
 
 - id: CONF-CTL-020
   requirement: >
@@ -1258,7 +1258,7 @@ items:
   subject: server
   observable: black-box
   codes: [role_forbids_op_class, unknown_role]
-  test: tests/conformance/test_control.py::test_role_table_in_force_is_positional
+  test: tests/conformance/test_authority.py::test_the_table_in_force_is_positional
 
 - id: CONF-CTL-021
   requirement: >
@@ -1275,7 +1275,7 @@ items:
   subject: server
   observable: black-box
   codes: [cert_workspace_mismatch, cert_member_mismatch, bad_root_signature, amend_id_already_used, malformed_control_payload]
-  test: tests/conformance/test_control.py::test_member_amend_ordering
+  test: tests/conformance/test_authority.py::test_amend_refusal_order
 
 # ── Prune ops ────────────────────────────────────────────────────────────────
 
@@ -1704,7 +1704,7 @@ items:
   subject: server
   observable: black-box
   codes: [cert_root_pk_mismatch, bad_root_signature]
-  test: tests/conformance/test_handover.py::test_handover_verification
+  test: tests/conformance/test_authority.py::test_handover_names_the_current_root
 
 - id: CONF-HAND-002
   requirement: >
@@ -1714,7 +1714,7 @@ items:
   subject: server
   observable: black-box
   codes: [cert_root_pk_mismatch]
-  test: tests/conformance/test_handover.py::test_current_root_moves
+  test: tests/conformance/test_authority.py::test_after_a_handover_the_incoming_root_signs
 
 - id: CONF-HAND-003
   requirement: >
@@ -1724,7 +1724,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_handover.py::test_handover_is_not_retroactive
+  test: tests/conformance/test_authority.py::test_after_a_handover_the_incoming_root_signs
 
 - id: CONF-HAND-004
   requirement: >
@@ -1912,7 +1912,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_discipline.py::test_error_shape_uniform
+  test: tests/conformance/test_health.py::test_every_refusal_carries_a_code
 
 - id: CONF-DISC-002
   requirement: Every per-op refusal on POST ops carries the zero-based batch index.
@@ -1920,7 +1920,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_discipline.py::test_index_on_per_op
+  test: tests/conformance/test_oplog.py::test_every_per_op_refusal_carries_an_index
 
 - id: CONF-DISC-003
   requirement: Every 429 carries retry_after_seconds.
@@ -1928,7 +1928,7 @@ items:
   subject: server
   observable: black-box
   codes: [member_challenge_rate_limited, vault_fetch_rate_limited]
-  test: tests/conformance/test_discipline.py::test_retry_after_present
+  test: tests/conformance/test_health.py::test_every_429_carries_retry_after
 
 - id: CONF-DISC-004
   requirement: >
@@ -2596,7 +2596,7 @@ items:
   subject: server
   observable: black-box
   codes: [bad_root_signature]
-  test: tests/conformance/test_delegation.py::test_delegate_cannot_delegate
+  test: tests/conformance/test_authority.py::test_a_delegate_may_not_delegate
 
 - id: CONF-DELG-002
   requirement: >
@@ -2608,7 +2608,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_delegation.py::test_delegate_holds_root_authority
+  test: tests/conformance/test_authority.py::test_a_delegate_signs_registrations_and_grants
 
 - id: CONF-DELG-003
   requirement: >
@@ -2618,7 +2618,7 @@ items:
   subject: server
   observable: black-box
   codes: [bad_root_signature, bad_vault_signature]
-  test: tests/conformance/test_delegation.py::test_three_exclusions
+  test: tests/conformance/test_authority.py::test_four_documents_are_roots_alone
 
 - id: CONF-DELG-004
   requirement: >
@@ -2629,7 +2629,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_delegation.py::test_positional_and_not_retroactive
+  test: tests/conformance/test_authority.py::test_the_delegation_verdict_is_positional
 
 - id: CONF-DELG-005
   requirement: >
@@ -2639,7 +2639,7 @@ items:
   subject: server
   observable: black-box
   codes: [delegation_id_already_used, unknown_delegation]
-  test: tests/conformance/test_delegation.py::test_delegation_ids
+  test: tests/conformance/test_authority.py::test_delegation_ids_are_once
 
 - id: CONF-DELG-006
   requirement: >
@@ -2651,7 +2651,7 @@ items:
   subject: server
   observable: black-box
   codes: [delegate_pk_in_use]
-  test: tests/conformance/test_delegation.py::test_delegate_key_disjoint
+  test: tests/conformance/test_authority.py::test_a_delegate_key_may_not_be_in_use
 
 - id: CONF-DELG-007
   requirement: >
@@ -2746,7 +2746,7 @@ items:
   subject: server
   observable: black-box
   codes: [no_live_grant]
-  test: tests/conformance/test_revocation.py::test_registration_survives_revoke
+  test: tests/conformance/test_authority.py::test_revocation_leaves_the_registration
 
 - id: CONF-REVK-003
   requirement: >

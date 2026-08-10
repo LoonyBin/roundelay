@@ -122,12 +122,26 @@ func (p *Pipeline) walk(ctx context.Context, tx Tx, workspace, device [16]byte, 
 	// the batch's first op *is* that op is a fact about its class, its payload
 	// type and its certificate — none of which stage 0 has read. Only the
 	// verdict is protocol; where the check runs is an implementation's business.
-	registered, err := tx.Registered(device)
+	//
+	// It is asked only of a Workspace that has an accepted genesis. Before one
+	// exists there is nothing to be registered in, so no route refuses
+	// no_registration for want of a registration that could not exist yet — a
+	// write there is answered by stage 2's workspace_not_created, or accepted as
+	// the op that brings the Workspace into being. Asking earlier would make the
+	// gate contradict itself: the device about to found the Workspace cannot be
+	// registered in it.
+	exists, err := tx.WorkspaceExists()
 	if err != nil {
 		return nil, storeDown()
 	}
-	if !registered && !p.Authority.EstablishesAccess(ops[0]) {
-		return nil, refuse(http.StatusForbidden, codes.NoRegistration, nil)
+	if exists {
+		registered, err := tx.Registered(device)
+		if err != nil {
+			return nil, storeDown()
+		}
+		if !registered && !p.Authority.EstablishesAccess(ops[0]) {
+			return nil, refuse(http.StatusForbidden, codes.NoRegistration, nil)
+		}
 	}
 
 	// ── Stages 2 to 4, per op in arrival order ──────────────────────────────

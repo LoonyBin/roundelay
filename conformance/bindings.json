@@ -1,0 +1,241 @@
+{
+  "items": {
+    "CONF-AUTHZ-002": [
+      "test_authority.py::test_unregistered_device_is_refused"
+    ],
+    "CONF-AUTHZ-003": [
+      "test_authority.py::test_revocation_leaves_the_registration"
+    ],
+    "CONF-AUTHZ-005": [
+      "test_authority.py::test_a_root_signed_payload_needs_no_grant"
+    ],
+    "CONF-AUTHZ-006": [
+      "test_authority.py::test_role_forbids_op_class"
+    ],
+    "CONF-AUTHZ-008": [
+      "test_authority.py::test_an_owner_grant_requires_root"
+    ],
+    "CONF-AUTHZ-009": [
+      "test_authority.py::test_an_owner_revoke_requires_root"
+    ],
+    "CONF-AUTHZ-010": [
+      "test_authority.py::test_an_unknown_role_is_refused"
+    ],
+    "CONF-AUTHZ-011": [
+      "test_authority.py::test_an_unknown_member_kind_is_refused"
+    ],
+    "CONF-AUTHZ-013": [
+      "test_authority.py::test_the_gate_is_per_workspace"
+    ],
+    "CONF-AUTHZ-014": [
+      "test_authority.py::test_the_exemption_reaches_the_first_op_only"
+    ],
+    "CONF-AUTHZ-015": [
+      "test_authority.py::test_the_exemption_is_not_a_hole"
+    ],
+    "CONF-CTL-003": [
+      "test_authority.py::test_the_zero_link_belongs_to_the_genesis_alone"
+    ],
+    "CONF-CTL-004": [
+      "test_authority.py::test_a_genesis_is_once_and_first"
+    ],
+    "CONF-CTL-006": [
+      "test_authority.py::test_an_authors_first_op_must_be_its_registration"
+    ],
+    "CONF-CTL-011": [
+      "test_authority.py::test_revocation_is_grant_granular"
+    ],
+    "CONF-CTL-012": [
+      "test_authority.py::test_the_control_chain_is_linear"
+    ],
+    "CONF-CTL-014": [
+      "test_authority.py::test_a_stale_repeat_is_a_duplicate_not_a_break"
+    ],
+    "CONF-CTL-015": [
+      "test_authority.py::test_before_a_genesis_the_tip_is_not_asked"
+    ],
+    "CONF-CTL-018": [
+      "test_authority.py::test_a_role_table_is_roots_own"
+    ],
+    "CONF-CTL-019": [
+      "test_authority.py::test_malformed_role_tables[roles0-an entry missing prune_types]",
+      "test_authority.py::test_malformed_role_tables[roles1-an entry with a key outside the closed three]",
+      "test_authority.py::test_malformed_role_tables[roles2-a role token with a capital]",
+      "test_authority.py::test_malformed_role_tables[roles3-a role token starting with a dash]",
+      "test_authority.py::test_malformed_role_tables[roles4-a role token over 32 bytes]",
+      "test_authority.py::test_malformed_role_tables[roles5-a repeated role token]",
+      "test_authority.py::test_malformed_role_tables[roles6-a repeated class]",
+      "test_authority.py::test_malformed_role_tables[roles7-a class outside 0-255]",
+      "test_authority.py::test_malformed_role_tables[roles8-no owner entry]",
+      "test_authority.py::test_malformed_role_tables[roles9-a non-owner naming 128]",
+      "test_authority.py::test_malformed_role_tables[roles10-prune_types on an entry that does not name 129]",
+      "test_authority.py::test_malformed_role_tables[roles11-an unserved prune type]",
+      "test_authority.py::test_malformed_role_tables[roles12-a repeated prune type]"
+    ],
+    "CONF-CTL-020": [
+      "test_authority.py::test_the_table_in_force_is_positional"
+    ],
+    "CONF-CTL-021": [
+      "test_authority.py::test_amend_refusal_order"
+    ],
+    "CONF-DELG-001": [
+      "test_authority.py::test_a_delegate_may_not_delegate"
+    ],
+    "CONF-DELG-002": [
+      "test_authority.py::test_a_delegate_signs_registrations_and_grants"
+    ],
+    "CONF-DELG-003": [
+      "test_authority.py::test_four_documents_are_roots_alone"
+    ],
+    "CONF-DELG-004": [
+      "test_authority.py::test_the_delegation_verdict_is_positional"
+    ],
+    "CONF-DELG-005": [
+      "test_authority.py::test_delegation_ids_are_once"
+    ],
+    "CONF-DELG-006": [
+      "test_authority.py::test_a_delegate_key_may_not_be_in_use"
+    ],
+    "CONF-DISC-001": [
+      "test_health.py::test_every_refusal_carries_a_code"
+    ],
+    "CONF-DISC-002": [
+      "test_oplog.py::test_every_per_op_refusal_carries_an_index"
+    ],
+    "CONF-DISC-003": [
+      "test_health.py::test_every_429_carries_retry_after"
+    ],
+    "CONF-HAND-001": [
+      "test_authority.py::test_handover_names_the_current_root"
+    ],
+    "CONF-HAND-002": [
+      "test_authority.py::test_after_a_handover_the_incoming_root_signs"
+    ],
+    "CONF-HAND-003": [
+      "test_authority.py::test_after_a_handover_the_incoming_root_signs"
+    ],
+    "CONF-HEALTH-001": [
+      "test_health.py::test_health_document"
+    ],
+    "CONF-HEALTH-006": [
+      "test_health.py::test_served_sets_are_truthful"
+    ],
+    "CONF-HEALTH-007": [
+      "test_health.py::test_op_classes_covers_every_range"
+    ],
+    "CONF-LOG-001": [
+      "test_oplog.py::test_a_refused_batch_leaves_nothing"
+    ],
+    "CONF-LOG-002": [
+      "test_oplog.py::test_founding_batch_commits_whole"
+    ],
+    "CONF-LOG-004": [
+      "test_oplog.py::test_stage_one_is_a_full_pass"
+    ],
+    "CONF-LOG-005": [
+      "test_oplog.py::test_stages_two_to_four_run_in_arrival_order"
+    ],
+    "CONF-LOG-006": [
+      "test_oplog.py::test_stage_zero_refusals_name_no_op"
+    ],
+    "CONF-LOG-007": [
+      "test_oplog.py::test_empty_batch"
+    ],
+    "CONF-LOG-008": [
+      "test_oplog.py::test_repeats_are_free"
+    ],
+    "CONF-LOG-010": [
+      "test_oplog.py::test_author_chain_gap"
+    ],
+    "CONF-LOG-014": [
+      "test_oplog.py::test_pull_paging"
+    ],
+    "CONF-LOG-015": [
+      "test_oplog.py::test_read_parameters_are_never_clamped[?limit=0]",
+      "test_oplog.py::test_read_parameters_are_never_clamped[?limit=999999]",
+      "test_oplog.py::test_read_parameters_are_never_clamped[?include_reprised=1]",
+      "test_oplog.py::test_read_parameters_are_never_clamped[?include_reprised=TRUE]",
+      "test_oplog.py::test_read_parameters_are_never_clamped[?since=-1]"
+    ],
+    "CONF-LOG-016": [
+      "test_oplog.py::test_pre_genesis"
+    ],
+    "CONF-LOG-017": [
+      "test_oplog.py::test_the_server_verifies_less_than_it_stores"
+    ],
+    "CONF-LOG-018": [
+      "test_oplog.py::test_the_lookup_sits_above_stage_two"
+    ],
+    "CONF-REVK-002": [
+      "test_authority.py::test_revocation_leaves_the_registration"
+    ],
+    "CONF-VER-001": [
+      "test_versioning.py::test_prefix_placement"
+    ],
+    "CONF-VER-002": [
+      "test_versioning.py::test_unserved_version"
+    ],
+    "CONF-VER-003": [
+      "test_versioning.py::test_not_version_shaped[/api/w/x/ops]",
+      "test_versioning.py::test_not_version_shaped[/V2/w/x/ops]",
+      "test_versioning.py::test_not_version_shaped[/v01/w/x/ops]",
+      "test_versioning.py::test_not_version_shaped[/v1x/w/x/ops]",
+      "test_versioning.py::test_not_version_shaped[/v1/nope]"
+    ],
+    "CONF-VER-004": [
+      "test_versioning.py::test_unknown_body_field"
+    ],
+    "CONF-VER-005": [
+      "test_versioning.py::test_unknown_query_parameter"
+    ],
+    "CONF-VER-006": [
+      "test_versioning.py::test_check_order"
+    ],
+    "CONF-VER-007": [
+      "test_versioning.py::test_duplicate_key"
+    ],
+    "CONF-VER-008": [
+      "test_versioning.py::test_wrong_scalar_types[true]",
+      "test_versioning.py::test_wrong_scalar_types[1.0]",
+      "test_versioning.py::test_wrong_scalar_types[\"1\"]",
+      "test_versioning.py::test_wrong_scalar_types[null]"
+    ],
+    "CONF-WIRE-001": [
+      "test_oplog.py::test_ops_are_served_back_byte_identically"
+    ],
+    "CONF-WIRE-002": [
+      "test_oplog.py::test_header_offsets_are_honoured"
+    ],
+    "CONF-WIRE-003": [
+      "test_oplog.py::test_length_floors"
+    ],
+    "CONF-WIRE-004": [
+      "test_oplog.py::test_sealed_server_read_classes[128-encrypted_control_op]",
+      "test_oplog.py::test_sealed_server_read_classes[129-encrypted_prune_op]",
+      "test_oplog.py::test_sealed_server_read_classes[191-encrypted_server_read_op]"
+    ],
+    "CONF-WIRE-005": [
+      "test_oplog.py::test_unassigned_classes[3]",
+      "test_oplog.py::test_unassigned_classes[4]",
+      "test_oplog.py::test_unassigned_classes[64]",
+      "test_oplog.py::test_unassigned_classes[127]",
+      "test_oplog.py::test_unassigned_classes[130]",
+      "test_oplog.py::test_unassigned_classes[190]"
+    ],
+    "CONF-WIRE-006": [
+      "test_oplog.py::test_base64_is_never_repaired"
+    ],
+    "CONF-WIRE-007": [
+      "test_oplog.py::test_non_canonical_uuid_spellings[0A1B2C3D-4E5F-6071-8293-A4B5C6D7E8F9]",
+      "test_oplog.py::test_non_canonical_uuid_spellings[{0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9}]",
+      "test_oplog.py::test_non_canonical_uuid_spellings[urn:uuid:0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9]",
+      "test_oplog.py::test_non_canonical_uuid_spellings[0a1b2c3d4e5f60718293a4b5c6d7e8f9]"
+    ],
+    "CONF-WIRE-012": [
+      "test_oplog.py::test_the_extension_range_is_disabled_by_default"
+    ],
+    "CONF-WIRE-023": [
+      "test_oplog.py::test_selector_bytes_resolve_before_the_floor"
+    ]
+  }
+}
