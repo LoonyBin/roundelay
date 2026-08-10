@@ -1,4 +1,4 @@
-.PHONY: all test vectors codes generate conformance check fmt
+.PHONY: all test vectors codes generate conformance check fmt pg-up pg-down pg-test
 
 all: check
 
@@ -21,6 +21,24 @@ conformance:
 
 test:
 	go test ./...
+
+# The Postgres store's tests need a database. Without ROUNDELAY_TEST_DSN they
+# skip, so `make test` stays runnable anywhere — but a release that has not run
+# them has not tested the store it ships.
+PG_DSN ?= postgres://postgres:roundelay@127.0.0.1:55432/roundelay?sslmode=disable
+
+pg-up:
+	podman run -d --rm --name roundelay-pg \
+		-e POSTGRES_PASSWORD=roundelay -e POSTGRES_DB=roundelay \
+		-p 55432:5432 docker.io/library/postgres:17-alpine
+	@until pg_isready -h 127.0.0.1 -p 55432 -q; do sleep 1; done
+	@echo "postgres ready on 55432"
+
+pg-down:
+	-podman rm -f roundelay-pg
+
+pg-test:
+	ROUNDELAY_TEST_DSN='$(PG_DSN)' go test -count=1 ./pgstore/ ./internal/memstore/
 
 fmt:
 	gofmt -l -w .
