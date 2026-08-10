@@ -266,3 +266,50 @@ func (a *Authority) verifyUnder(keys [][32]byte, document string, cert []byte, s
 func (a *Authority) verifyOne(key [32]byte, document string, cert []byte, sig [64]byte) bool {
 	return a.verifyUnder([][32]byte{key}, document, cert, sig)
 }
+
+// ── bar 1 ───────────────────────────────────────────────────────────────────
+
+// Bar1 is the credential bar every read sits at: any unrevoked device
+// registered in this Workspace, with no permission grant required.
+//
+// It is asked only of a Workspace that has an accepted genesis. Before one
+// exists there is nothing to be registered in, so no route refuses
+// no_registration for want of a registration that could not exist yet — a read
+// answers as an empty Workspace does instead. Refusing would make the gate
+// contradict itself: the device about to found the Workspace cannot be
+// registered in it.
+//
+// A device with zero grants passes. That is the pre-grant case, and it is what
+// lets an enrolling device pull and replay the control log before it holds any
+// permission — which it must, to discover what it has joined. A device is
+// revoked here iff it has at least one grant and none live.
+func (a *Authority) Bar1(tx oplog.ReadTx, member [16]byte) *oplog.Refusal {
+	registered, err := tx.Registered(member)
+	if err != nil {
+		return storeDown()
+	}
+	if !registered {
+		return refuse(http.StatusForbidden, codes.NoRegistration, nil)
+	}
+	had, err := tx.HasAnyGrant(member)
+	if err != nil {
+		return storeDown()
+	}
+	if !had {
+		return nil
+	}
+	at, err := tx.NextSeq()
+	if err != nil {
+		return storeDown()
+	}
+	live, err := tx.LiveGrantsAt(member, at)
+	if err != nil {
+		return storeDown()
+	}
+	if len(live) == 0 {
+		// A revoke closes grants, never the registration. The device is still a
+		// member — which is why this is not no_registration.
+		return refuse(http.StatusForbidden, codes.NoLiveGrant, map[string]any{"revoked": true})
+	}
+	return nil
+}

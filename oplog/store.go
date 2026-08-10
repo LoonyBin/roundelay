@@ -104,6 +104,11 @@ type Store interface {
 	// which loses ops permanently and silently, because `since` is exclusive and
 	// no server-side cursor exists.
 	BeginAppend(ctx context.Context, workspace [16]byte) (Tx, error)
+
+	// BeginRead opens a read-only view. It must not observe a partially
+	// committed batch, and must not return position S while any position below S
+	// is still uncommitted.
+	BeginRead(ctx context.Context, workspace [16]byte) (ReadTx, error)
 }
 
 // Tx is one append transaction. The whole batch commits, or none of it does.
@@ -306,4 +311,48 @@ type AuthorityTx interface {
 	// both trigger: every refresh token scoped to that device is revoked, and
 	// every live signal socket it holds here closes with 4403.
 	EndDeviceSessions(member [16]byte) error
+}
+
+// ── reading ─────────────────────────────────────────────────────────────────
+
+// Page is one page of ops, with the exact has_more the route promises.
+type Page struct {
+	Ops     []StoredOp
+	HasMore bool
+}
+
+// MemberPage is one page of the member list.
+type MemberPage struct {
+	Members []MemberRecord
+	HasMore bool
+}
+
+// ReadTx is a read-only view of one Workspace.
+//
+// Reads take their own transaction because they are bar-1 routes that write
+// nothing, and because a read must not observe a partially committed batch.
+type ReadTx interface {
+	// WorkspaceExists reports an accepted genesis. Reading a Workspace that does
+	// not exist yet returns an empty page rather than an error — which is how a
+	// device discovers it needs to create one, while holding a token and no
+	// permissions at all.
+	WorkspaceExists() (bool, error)
+
+	Registered(member [16]byte) (bool, error)
+	HasAnyGrant(member [16]byte) (bool, error)
+	LiveGrantsAt(member [16]byte, at int64) ([]Grant, error)
+	NextSeq() (int64, error)
+
+	// ReadOps serves ops ascending by position, `since` exclusive.
+	//
+	// includeReprised drops the default filter and serves the history view. It
+	// never returns a hard-pruned op: the position is absent from the page, and
+	// the hard_prune that removed it is in the log.
+	ReadOps(since int64, limit int, includeReprised bool) (Page, error)
+
+	// ReadMembers serves the member list ordered by raw member id bytes
+	// ascending, `after` exclusive.
+	ReadMembers(after *[16]byte, limit int) (MemberPage, error)
+
+	Close() error
 }

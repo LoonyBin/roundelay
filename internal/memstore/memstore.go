@@ -14,6 +14,7 @@
 package memstore
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"maps"
@@ -183,6 +184,25 @@ func (s Seeder) Register(member [16]byte, controlKeyID, contentKeyID [8]byte) {
 		s.st.keyIDs[keyKey{member, oplog.ControlSigning}], controlKeyID)
 	s.st.keyIDs[keyKey{member, oplog.ContentSigning}] = append(
 		s.st.keyIDs[keyKey{member, oplog.ContentSigning}], contentKeyID)
+}
+
+// Member records a full registration, for a fixture that needs the member list
+// to have something in it.
+func (s Seeder) Member(rec oplog.MemberRecord) {
+	s.st.members[rec.MemberID] = rec
+	s.st.registered[rec.MemberID] = true
+	s.st.keyIDs[keyKey{rec.MemberID, oplog.ControlSigning}] = append(
+		s.st.keyIDs[keyKey{rec.MemberID, oplog.ControlSigning}], wire.KeyID(rec.ControlPK[:]))
+	s.st.keyIDs[keyKey{rec.MemberID, oplog.ContentSigning}] = append(
+		s.st.keyIDs[keyKey{rec.MemberID, oplog.ContentSigning}], wire.KeyID(rec.ContentPK[:]))
+	s.st.controlKeys[rec.MemberID] = append(s.st.controlKeys[rec.MemberID],
+		keyInterval{pk: rec.ControlPK, start: rec.RegisteredAt})
+}
+
+// Grant records a grant with its positional window.
+func (s Seeder) Grant(g oplog.Grant) {
+	s.st.grants[g.GrantID] = g
+	s.st.grantOrder = append(s.st.grantOrder, g.GrantID)
 }
 
 // Ops returns the committed log, for assertions.
@@ -534,6 +554,21 @@ func (t *tx) AmendIDUsed(id [16]byte) (bool, error) { return t.st.amendIDs[id], 
 
 func (t *tx) PutAmend(member, amendID [16]byte, control, content, kex *oplog.KeyChange, at int64) error {
 	t.st.amendIDs[amendID] = true
+	// The member row carries the keys in force, which is the latest interval
+	// materialised. Every op below the amend keeps verifying under the keys it
+	// was signed with; what moves is only what the next one is judged against.
+	if rec, ok := t.st.members[member]; ok {
+		if control != nil {
+			rec.ControlPK = control.PK
+		}
+		if content != nil {
+			rec.ContentPK = content.PK
+		}
+		if kex != nil {
+			rec.KexPK = kex.PK
+		}
+		t.st.members[member] = rec
+	}
 	if control != nil {
 		// The interval the amend closes ends at the amend's own position, and the
 		// new one opens there. Every op below keeps verifying under the keys it
@@ -621,4 +656,108 @@ func (s *Store) Root(id [16]byte) ([32]byte, bool) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.st.root, w.st.hasRoot
+}
+
+// ── reading ─────────────────────────────────────────────────────────────────
+
+// BeginRead takes the Workspace's lock and serves from the committed state.
+//
+// Holding the lock is what makes a read unable to observe a partially committed
+// batch: an append mutates a clone and swaps it in under the same lock, so a
+// reader sees the state before or the state after and never a state between.
+func (s *Store) BeginRead(_ context.Context, id [16]byte) (oplog.ReadTx, error) {
+	w := s.workspace(id)
+	w.mu.Lock()
+	return &readTx{ws: w, st: w.st}, nil
+}
+
+type readTx struct {
+	ws     *workspace
+	st     *state
+	closed bool
+}
+
+func (r *readTx) WorkspaceExists() (bool, error) { return r.st.exists, nil }
+
+func (r *readTx) Registered(member [16]byte) (bool, error) { return r.st.registered[member], nil }
+
+func (r *readTx) HasAnyGrant(member [16]byte) (bool, error) {
+	for _, id := range r.st.grantOrder {
+		if r.st.grants[id].Member == member {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (r *readTx) LiveGrantsAt(member [16]byte, at int64) ([]oplog.Grant, error) {
+	var out []oplog.Grant
+	for _, id := range r.st.grantOrder {
+		if row := r.st.grants[id]; row.Member == member && row.LiveAt(at) {
+			out = append(out, row)
+		}
+	}
+	return out, nil
+}
+
+func (r *readTx) NextSeq() (int64, error) { return int64(len(r.st.ops)) + 1, nil }
+
+func (r *readTx) ReadOps(since int64, limit int, includeReprised bool) (oplog.Page, error) {
+	var page oplog.Page
+	for _, op := range r.st.ops {
+		if op.Seq <= since {
+			continue
+		}
+		// A hard-pruned op is absent from every page, under either filter. It is
+		// necessarily reprised — rule 4 requires the mark first — so the default
+		// filter already hides it; this is what keeps the history view from
+		// serving a hole.
+		if op.Envelope == nil {
+			continue
+		}
+		if !includeReprised && op.Reprised() {
+			continue
+		}
+		// One past the limit answers has_more exactly, without a second query
+		// and without counting the whole log.
+		if len(page.Ops) == limit {
+			page.HasMore = true
+			break
+		}
+		page.Ops = append(page.Ops, *op)
+	}
+	return page, nil
+}
+
+func (r *readTx) ReadMembers(after *[16]byte, limit int) (oplog.MemberPage, error) {
+	ids := make([][16]byte, 0, len(r.st.members))
+	for id := range r.st.members {
+		ids = append(ids, id)
+	}
+	// Ordered by raw member id bytes, as unsigned. Not by the UUID text, and
+	// emphatically not by a platform UUID type comparing two signed 64-bit
+	// halves, which reorders every id whose top bit is set.
+	slices.SortFunc(ids, func(a, b [16]byte) int { return bytes.Compare(a[:], b[:]) })
+
+	var page oplog.MemberPage
+	for _, id := range ids {
+		if after != nil && bytes.Compare(id[:], after[:]) <= 0 {
+			continue
+		}
+		if len(page.Members) == limit {
+			page.HasMore = true
+			break
+		}
+		page.Members = append(page.Members, r.st.members[id])
+	}
+	return page, nil
+}
+
+func (r *readTx) Close() error {
+	if r.closed {
+		return nil
+	}
+	r.closed = true
+	r.ws.mu.Unlock()
+	return nil
 }
