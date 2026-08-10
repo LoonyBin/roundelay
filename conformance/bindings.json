@@ -63,6 +63,12 @@
     "CONF-CTL-006": [
       "test_authority.py::test_an_authors_first_op_must_be_its_registration"
     ],
+    "CONF-CTL-009": [
+      "test_prune.py::test_a_rotate_names_the_epoch_it_leaves"
+    ],
+    "CONF-CTL-010": [
+      "test_prune.py::test_a_rotate_moves_one_epoch"
+    ],
     "CONF-CTL-011": [
       "test_authority.py::test_revocation_is_grant_granular"
     ],
@@ -141,6 +147,18 @@
       "test_identity.py::test_a_claimed_key_id_must_be_the_derivation[content_key_id]",
       "test_identity.py::test_a_claimed_key_id_must_be_the_derivation[kex_key_id]"
     ],
+    "CONF-EFFECT-001": [
+      "test_prune.py::test_a_grant_is_judged_at_the_ops_position"
+    ],
+    "CONF-EFFECT-002": [
+      "test_prune.py::test_a_revocation_position_is_write_once"
+    ],
+    "CONF-EFFECT-003": [
+      "test_prune.py::test_losing_the_last_grant_revokes_the_refresh_tokens"
+    ],
+    "CONF-EFFECT-005": [
+      "test_prune.py::test_a_rotate_creates_the_epoch_before_its_wraps"
+    ],
     "CONF-ESC-001": [
       "test_keyplane.py::test_the_first_write_is_version_one"
     ],
@@ -179,6 +197,29 @@
     ],
     "CONF-HAND-003": [
       "test_authority.py::test_after_a_handover_the_incoming_root_signs"
+    ],
+    "CONF-HARD-001": [
+      "test_prune.py::test_the_prune_type_selects_the_rules[payload0-malformed_prune_payload]",
+      "test_prune.py::test_the_prune_type_selects_the_rules[payload1-unsupported_prune_type]",
+      "test_prune.py::test_the_prune_type_selects_the_rules[payload2-malformed_prune_payload]"
+    ],
+    "CONF-HARD-002": [
+      "test_prune.py::test_only_what_a_prune_marked_may_be_destroyed"
+    ],
+    "CONF-HARD-004": [
+      "test_prune.py::test_a_hard_prune_leaves_the_shape_of_the_log"
+    ],
+    "CONF-HARD-005": [
+      "test_prune.py::test_a_hard_prune_is_attested_on_both_paths"
+    ],
+    "CONF-HARD-006": [
+      "test_prune.py::test_a_bare_prune_class_confers_prune_alone"
+    ],
+    "CONF-HARD-007": [
+      "test_prune.py::test_only_what_a_prune_marked_may_be_destroyed"
+    ],
+    "CONF-HARD-008": [
+      "test_prune.py::test_a_hard_prune_is_attested_on_both_paths"
     ],
     "CONF-HEALTH-001": [
       "test_health.py::test_health_document"
@@ -343,6 +384,32 @@
     ],
     "CONF-MEM-010": [
       "test_identity.py::test_key_ids_is_all_or_nothing"
+    ],
+    "CONF-PRUNE-001": [
+      "test_prune.py::test_prune_shape_rules"
+    ],
+    "CONF-PRUNE-002": [
+      "test_prune.py::test_a_reprise_must_exist"
+    ],
+    "CONF-PRUNE-003": [
+      "test_prune.py::test_target_cross_checks"
+    ],
+    "CONF-PRUNE-004": [
+      "test_prune.py::test_a_prune_marks_and_never_deletes"
+    ],
+    "CONF-PRUNE-005": [
+      "test_prune.py::test_a_target_is_reprised_once"
+    ],
+    "CONF-PRUNE-006": [
+      "test_prune.py::test_the_attestation_is_over_the_whole_envelope[header]",
+      "test_prune.py::test_the_attestation_is_over_the_whole_envelope[body]",
+      "test_prune.py::test_the_attestation_is_over_the_whole_envelope[payload]"
+    ],
+    "CONF-PRUNE-011": [
+      "test_prune.py::test_a_bare_prune_class_confers_prune_alone"
+    ],
+    "CONF-PRUNE-013": [
+      "test_prune.py::test_a_prune_is_the_target_of_nothing"
     ],
     "CONF-REVK-002": [
       "test_authority.py::test_revocation_leaves_the_registration"

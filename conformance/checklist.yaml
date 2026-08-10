@@ -1151,7 +1151,7 @@ items:
   subject: server
   observable: black-box
   codes: [rotate_epoch_conflict]
-  test: tests/conformance/test_races.py::test_concurrent_rotation
+  test: tests/conformance/test_prune.py::test_a_rotate_names_the_epoch_it_leaves
 
 - id: CONF-CTL-010
   requirement: A rotate with to_epoch != from_epoch + 1 is refused malformed_control_payload.
@@ -1159,7 +1159,7 @@ items:
   subject: server
   observable: black-box
   codes: [malformed_control_payload]
-  test: tests/conformance/test_control.py::test_single_step_rotation
+  test: tests/conformance/test_prune.py::test_a_rotate_moves_one_epoch
 
 - id: CONF-CTL-011
   requirement: "Revocation is grant-granular: revoking a granter leaves the Grants it issued live."
@@ -1287,7 +1287,7 @@ items:
   subject: server
   observable: black-box
   codes: [prune_targets_empty, prune_duplicate_target, prune_targets_too_many, malformed_prune_payload]
-  test: tests/conformance/test_prune.py::test_shape_rules
+  test: tests/conformance/test_prune.py::test_prune_shape_rules
 
 - id: CONF-PRUNE-002
   requirement: >
@@ -1297,7 +1297,7 @@ items:
   subject: server
   observable: black-box
   codes: [prune_reprise_not_found]
-  test: tests/conformance/test_prune.py::test_reprise_must_be_own
+  test: tests/conformance/test_prune.py::test_a_reprise_must_exist
 
 - id: CONF-PRUNE-003
   requirement: >
@@ -1319,7 +1319,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_prune.py::test_soft_delete_visibility
+  test: tests/conformance/test_prune.py::test_a_prune_marks_and_never_deletes
 
 - id: CONF-PRUNE-005
   requirement: Two concurrent prunes sharing a target yield prune_target_already_reprised for the loser, never a 500.
@@ -1327,7 +1327,7 @@ items:
   subject: server
   observable: black-box
   codes: [prune_target_already_reprised]
-  test: tests/conformance/test_races.py::test_concurrent_prune
+  test: tests/conformance/test_prune.py::test_a_target_is_reprised_once
 
 - id: CONF-PRUNE-006
   requirement: >
@@ -1340,7 +1340,7 @@ items:
   subject: server
   observable: black-box
   codes: [prune_target_attestation_mismatch]
-  test: tests/conformance/test_prune.py::test_attestation_construction
+  test: tests/conformance/test_prune.py::test_the_attestation_is_over_the_whole_envelope
 
 - id: CONF-PRUNE-007
   requirement: >
@@ -1417,7 +1417,7 @@ items:
   subject: server
   observable: black-box
   codes: [role_forbids_prune_type, prune_targets_empty]
-  test: tests/conformance/test_prune.py::test_prune_ext_role_gating
+  test: tests/conformance/test_prune.py::test_a_bare_prune_class_confers_prune_alone
 
 - id: CONF-PRUNE-012
   requirement: >
@@ -1443,7 +1443,7 @@ items:
   subject: server
   observable: black-box
   codes: [prune_target_is_prune, hard_prune_target_is_prune]
-  test: tests/conformance/test_prune.py::test_prune_ext_is_never_a_target
+  test: tests/conformance/test_prune.py::test_a_prune_is_the_target_of_nothing
 
 - id: CONF-PRUNE-014
   requirement: >
@@ -1468,7 +1468,7 @@ items:
   subject: server
   observable: black-box
   codes: [no_live_grant]
-  test: tests/conformance/test_effects.py::test_positional_verdict
+  test: tests/conformance/test_prune.py::test_a_grant_is_judged_at_the_ops_position
 
 - id: CONF-EFFECT-002
   requirement: A revocation position is write-once and a second revoke does not move it.
@@ -1476,7 +1476,7 @@ items:
   subject: server
   observable: black-box
   codes: [already_revoked]
-  test: tests/conformance/test_effects.py::test_revocation_immutable
+  test: tests/conformance/test_prune.py::test_a_revocation_position_is_write_once
 
 - id: CONF-EFFECT-003
   requirement: >
@@ -1486,7 +1486,7 @@ items:
   subject: server
   observable: black-box
   codes: [invalid_refresh_token]
-  test: tests/conformance/test_effects.py::test_revocation_cascade
+  test: tests/conformance/test_prune.py::test_losing_the_last_grant_revokes_the_refresh_tokens
 
 - id: CONF-EFFECT-004
   requirement: >
@@ -1504,7 +1504,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_keyplane.py::test_rotate_creates_empty_epoch
+  test: tests/conformance/test_prune.py::test_a_rotate_creates_the_epoch_before_its_wraps
 
 - id: CONF-EFFECT-006
   requirement: >
@@ -1969,7 +1969,7 @@ items:
   subject: server
   observable: black-box
   codes: [malformed_prune_payload, unsupported_prune_type]
-  test: tests/conformance/test_prune.py::test_prune_type_discriminator
+  test: tests/conformance/test_prune.py::test_the_prune_type_selects_the_rules
 
 - id: CONF-HARD-002
   requirement: >
@@ -1980,7 +1980,7 @@ items:
   subject: server
   observable: black-box
   codes: [hard_prune_target_not_reprised]
-  test: tests/conformance/test_prune.py::test_hard_prune_requires_soft_first
+  test: tests/conformance/test_prune.py::test_only_what_a_prune_marked_may_be_destroyed
 
 - id: CONF-HARD-003
   requirement: >
@@ -2006,7 +2006,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_prune.py::test_tombstone_survives_destruction
+  test: tests/conformance/test_prune.py::test_a_hard_prune_leaves_the_shape_of_the_log
 
 - id: CONF-HARD-005
   requirement: >
@@ -2019,7 +2019,7 @@ items:
   subject: server
   observable: black-box
   codes: [prune_target_attestation_mismatch]
-  test: tests/conformance/test_prune.py::test_hard_prune_idempotent_and_guarded
+  test: tests/conformance/test_prune.py::test_a_hard_prune_is_attested_on_both_paths
 
 - id: CONF-HARD-008
   requirement: >
@@ -2031,7 +2031,7 @@ items:
   subject: server
   observable: black-box
   codes: [prune_target_not_found]
-  test: tests/conformance/test_prune.py::test_hard_prune_target_must_exist
+  test: tests/conformance/test_prune.py::test_a_hard_prune_is_attested_on_both_paths
 
 - id: CONF-HARD-006
   requirement: >
@@ -2045,7 +2045,7 @@ items:
   subject: server
   observable: black-box
   codes: [role_forbids_prune_type, prune_targets_empty]
-  test: tests/conformance/test_prune.py::test_hard_prune_needs_explicit_grant
+  test: tests/conformance/test_prune.py::test_a_bare_prune_class_confers_prune_alone
 
 - id: CONF-HARD-007
   requirement: >
@@ -2055,7 +2055,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_prune.py::test_no_server_initiated_reclamation
+  test: tests/conformance/test_prune.py::test_only_what_a_prune_marked_may_be_destroyed
 
 # ── Consumption ──────────────────────────────────────────────────────────────
 

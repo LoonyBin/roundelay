@@ -471,6 +471,53 @@ class Session:
             },
         )
 
+    # ── prune ───────────────────────────────────────────────────────────────
+
+    def target(self, op: dict[str, Any]) -> dict[str, Any]:
+        """A prune target, built from an op as the read route serves it.
+
+        A served row is {seq, envelope} and nothing else — the server does not
+        restate what the header already says, so a client that wants the author
+        or the class reads them out of the bytes. envelope_hash is over the whole
+        envelope, header and body and signature, unframed and lowercase hex.
+        """
+        header, _, _ = wire.parse_envelope(b64d(op["envelope"]))
+        return {
+            "seq": op["seq"],
+            "author_member_id": fixtures.uuid(header.author_member_id),
+            "author_seq": header.author_seq,
+            "envelope_hash": crypto.envelope_hash(b64d(op["envelope"])).hex(),
+        }
+
+    @staticmethod
+    def header_of(op: dict[str, Any]) -> wire.Header:
+        header, _, _ = wire.parse_envelope(b64d(op["envelope"]))
+        return header
+
+    def prune(self, workspace: bytes, targets: list[dict[str, Any]],
+              reprise_id: str, **kw) -> str:
+        return self.control_class(workspace, wire.CLASS_PRUNE, {
+            "type": "prune",
+            "reprise": {"op_id": reprise_id},
+            "targets": targets,
+        }, **kw)
+
+    def hard_prune(self, workspace: bytes, targets: list[dict[str, Any]], **kw) -> str:
+        return self.control_class(workspace, wire.CLASS_PRUNE, {
+            "type": "hard_prune", "targets": targets,
+        }, **kw)
+
+    def prune_payload(self, workspace: bytes, payload: Any, **kw) -> str:
+        return self.control_class(workspace, wire.CLASS_PRUNE, payload, **kw)
+
+    def control_class(self, workspace: bytes, op_class: int, payload: Any, **kw) -> str:
+        raw = json.dumps(payload, separators=(",", ":")).encode()
+        return self.envelope(op_class=op_class, payload=raw, workspace=workspace, **kw)
+
+    def ops(self, workspace: bytes, query: str = "") -> Response:
+        return self.s.get(f"/v1/w/{fixtures.uuid(workspace)}/ops{query}",
+                          token=self.d.access)
+
     # ── the key plane ───────────────────────────────────────────────────────
 
     def wrap_for(self, workspace: bytes, epoch: int, member: Device,
