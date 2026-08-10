@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import json
+import secrets
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -469,6 +470,88 @@ class Session:
                 "keywrap_digest_b64": b64(digest),
             },
         )
+
+    # ── the key plane ───────────────────────────────────────────────────────
+
+    def wrap_for(self, workspace: bytes, epoch: int, member: Device,
+                 key: bytes | None = None) -> dict[str, Any]:
+        """One member wrap, sealed to that member's registered kex key."""
+        ephemeral = secrets.token_bytes(32)
+        raw = crypto.member_wrap(
+            self.s.namespace, workspace, epoch, member.member_id,
+            crypto.key_id(member.kex_pk)[:8], member.kex_pk, ephemeral,
+            fixtures.seed(f"wrapnonce/{epoch}/{member.label}")[:24],
+            key if key is not None else fixtures.CONTENT_KEY,
+        )
+        return {
+            "member_id": fixtures.uuid(member.member_id),
+            "kex_key_id_b64": b64(crypto.key_id(member.kex_pk)[:8]),
+            "wrap_b64": b64(raw),
+        }
+
+    def escrow_for(self, workspace: bytes, epoch: int, key: bytes | None = None) -> bytes:
+        return crypto.escrow_wrap(
+            self.s.namespace, workspace, epoch, fixtures.MASTER_WRAP_KEY,
+            fixtures.seed(f"escrownonce/{epoch}")[:24],
+            key if key is not None else fixtures.CONTENT_KEY,
+        )
+
+    def wrap_set(self, workspace: bytes, epoch: int, members: list[Device],
+                 key: bytes | None = None) -> tuple[list[dict[str, Any]], bytes, bytes]:
+        """The three things a publish needs, and the digest that binds them."""
+        wraps = [self.wrap_for(workspace, epoch, m, key) for m in members]
+        escrow = self.escrow_for(workspace, epoch, key)
+        digest = crypto.keywrap_digest(
+            self.s.namespace, epoch,
+            [(fixtures.parse_uuid(w["member_id"]), b64d(w["kex_key_id_b64"]),
+              b64d(w["wrap_b64"])) for w in wraps],
+            escrow)
+        return wraps, escrow, digest
+
+    def publish(self, workspace: bytes, epoch: int, wraps: list[dict[str, Any]],
+                escrow: bytes, digest: bytes | None, *, token: str | None = None,
+                raw_body: str | None = None) -> Response:
+        if raw_body is not None:
+            return self.s.put(f"/v1/w/{fixtures.uuid(workspace)}/keywraps",
+                              token=token if token is not None else self.d.access,
+                              raw_body=raw_body)
+        payload: dict[str, Any] = {
+            "epoch": epoch, "wraps": wraps, "escrow_wrap_b64": b64(escrow),
+        }
+        if digest is not None:
+            payload["keywrap_digest_b64"] = b64(digest)
+        return self.s.put(f"/v1/w/{fixtures.uuid(workspace)}/keywraps",
+                          token=token if token is not None else self.d.access,
+                          json_body=payload)
+
+    def my_wraps(self, workspace: bytes, query: str = "", **kw) -> Response:
+        return self.s.get(f"/v1/w/{fixtures.uuid(workspace)}/keywraps/me{query}",
+                          token=kw.pop("token", self.d.access), **kw)
+
+    def epoch_keys(self, workspace: bytes, query: str = "", **kw) -> Response:
+        return self.s.get(f"/v1/w/{fixtures.uuid(workspace)}/epoch-keys{query}",
+                          token=kw.pop("token", self.d.access), **kw)
+
+    # ── the vault ───────────────────────────────────────────────────────────
+
+    def vault_write(self, locator: str, version: int, blob: bytes,
+                    *, signer: bytes | None = None, root_pk: bytes | None = None,
+                    raw_body: str | None = None) -> Response:
+        if raw_body is not None:
+            return self.s.put(f"/v1/vault/{locator}", raw_body=raw_body)
+        key = signer if signer is not None else self.root
+        sig = crypto.sign(key, wire.vault_input(self.s.namespace, bytes.fromhex(locator),
+                                                version, blob))
+        return self.s.put(f"/v1/vault/{locator}", json_body={
+            "version": version,
+            "blob_b64": b64(blob),
+            "root_sig_b64": b64(sig),
+            "root_pk_b64": b64(root_pk if root_pk is not None
+                               else crypto.ed25519_public(key)),
+        })
+
+    def vault_read(self, locator: str) -> Response:
+        return self.s.get(f"/v1/vault/{locator}")
 
     def content(self, workspace: bytes, text: bytes = b"hello", **kw) -> str:
         return self.envelope(

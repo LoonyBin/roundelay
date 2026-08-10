@@ -3,12 +3,15 @@ package httpapi
 import (
 	"io"
 	"net/http"
+	"regexp"
+	"strconv"
 
 	"github.com/loonybin/roundelay/codes"
 	"github.com/loonybin/roundelay/keyplane"
 	"github.com/loonybin/roundelay/oplog"
 	"github.com/loonybin/roundelay/profile"
 	"github.com/loonybin/roundelay/strictjson"
+	"github.com/loonybin/roundelay/wire"
 )
 
 // KeyplaneHandler serves the three Workspace-scoped key-plane routes.
@@ -79,7 +82,16 @@ func (h *KeyplaneHandler) ServePublish(w http.ResponseWriter, r *http.Request) {
 
 	if err := body.Err(); err != nil {
 		if !epochOK || namesEpoch(err) {
-			Refuse(w, codes.MalformedKeyEpoch, nil)
+			RefuseStatus(w, http.StatusUnprocessableEntity, codes.MalformedKeyEpoch,
+				map[string]any{"epoch": up.Epoch})
+			return
+		}
+		// The four byte fields have codes of their own, and the sequence puts
+		// each at a named position. Reporting malformed_request for a wrap that
+		// is one byte short would collapse four repairs into one, and lose the
+		// index that says which of two hundred entries to look at.
+		if r := keywrapFieldRefusal(err); r != nil {
+			writeRefusal(w, r)
 			return
 		}
 		if RefuseDecode(w, err) {
@@ -107,6 +119,44 @@ func (h *KeyplaneHandler) ServePublish(w http.ResponseWriter, r *http.Request) {
 }
 
 // namesEpoch reports whether a decode failure was the epoch's.
+// wrapPath matches a path into the wraps array: wraps.3.kex_key_id_b64.
+var wrapPath = regexp.MustCompile(`^wraps\.(\d+)\.(\w+)$`)
+
+// keywrapFieldRefusal maps a decode failure onto the upload's own field codes.
+//
+// nil means "not one of ours", and the generic decode refusal answers.
+func keywrapFieldRefusal(err error) *oplog.Refusal {
+	m, ok := err.(*strictjson.Malformed)
+	if !ok {
+		return nil
+	}
+	unproc := http.StatusUnprocessableEntity
+	for _, f := range m.Fields {
+		switch f {
+		case "escrow_wrap_b64":
+			return &oplog.Refusal{Status: unproc, Code: codes.MalformedEscrowWrap,
+				Fields: map[string]any{"expected_bytes": wire.EscrowWrapLen}}
+		case "keywrap_digest_b64":
+			return &oplog.Refusal{Status: unproc, Code: codes.MalformedKeywrapDigest,
+				Fields: map[string]any{"expected_bytes": 32}}
+		}
+		g := wrapPath.FindStringSubmatch(f)
+		if g == nil {
+			continue
+		}
+		index, _ := strconv.Atoi(g[1])
+		switch g[2] {
+		case "kex_key_id_b64":
+			return &oplog.Refusal{Status: unproc, Code: codes.MalformedKexKeyId,
+				Fields: map[string]any{"index": index}}
+		case "wrap_b64":
+			return &oplog.Refusal{Status: unproc, Code: codes.MalformedKeywrap,
+				Fields: map[string]any{"index": index, "expected_bytes": wire.MemberWrapLen}}
+		}
+	}
+	return nil
+}
+
 func namesEpoch(err error) bool {
 	m, ok := err.(*strictjson.Malformed)
 	if !ok {

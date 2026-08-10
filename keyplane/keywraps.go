@@ -8,6 +8,7 @@ package keyplane
 
 import (
 	"context"
+	"encoding/base64"
 	"net/http"
 
 	"github.com/loonybin/roundelay/codes"
@@ -72,36 +73,60 @@ func (p *Publisher) Publish(_ context.Context, tx oplog.Tx, caller [16]byte, up 
 		return nil, refuse(http.StatusForbidden, codes.NoLiveGrant, nil)
 	}
 	if !owner {
-		return nil, refuse(http.StatusForbidden, codes.KeywrapRequiresOwner, nil)
+		// The code table gives this refusal a revoked field; nothing states what
+		// it means. The only definition the vocabulary offers is no_live_grant's
+		// — "had grants once and has none live" — and under the sequence above
+		// that state is unreachable here, because a caller in it was already
+		// answered no_live_grant two checks ago. So the field is present, because
+		// the table says it is, and constant, because its only stated meaning
+		// cannot vary at this point.
+		//
+		// The reading that would carry information is "held an authority grant
+		// and lost it", which is a different fact from the one no_live_grant
+		// reports and the only one no rule in either layer needs.
+		return nil, refuse(http.StatusForbidden, codes.KeywrapRequiresOwner,
+			map[string]any{"revoked": false})
 	}
 	if len(up.EscrowWrap) != wire.EscrowWrapLen {
-		return nil, refuse(unproc, codes.MalformedEscrowWrap, nil)
+		return nil, refuse(unproc, codes.MalformedEscrowWrap,
+			map[string]any{"expected_bytes": wire.EscrowWrapLen})
 	}
 
 	// Per entry, in the order the sequence gives.
 	seen := map[[16]byte]bool{}
-	for _, w := range up.Wraps {
+	for i, w := range up.Wraps {
+		// index, on every one of them. A set is as large as the Workspace has
+		// members, and "one of these two hundred wraps is wrong" is a bisection
+		// exercise rather than a refusal.
+		at := func(f map[string]any) map[string]any {
+			if f == nil {
+				f = map[string]any{}
+			}
+			f["index"] = i
+			return f
+		}
 		if len(w.Wrap) != wire.MemberWrapLen {
-			return nil, refuse(unproc, codes.MalformedKeywrap, nil)
+			return nil, refuse(unproc, codes.MalformedKeywrap,
+				at(map[string]any{"expected_bytes": wire.MemberWrapLen}))
 		}
 		inForce, ok, err := tx.KexKeyIDInForce(w.Member)
 		if err != nil {
 			return nil, storeDown()
 		}
 		if !ok {
-			return nil, refuse(unproc, codes.UnknownKeywrapMember, nil)
+			return nil, refuse(unproc, codes.UnknownKeywrapMember, at(nil))
 		}
 		if w.KexKeyID != inForce {
 			// Materialised state is the honest answer here: a set is minted for
 			// the epoch about to be published, so the key a member should be
 			// sealed to is the one it holds now. An amend that lands mid-upload
 			// refuses the set, and the remedy is to rebuild it against the log.
-			return nil, refuse(unproc, codes.KexKeyIdNotRegistered, nil)
+			return nil, refuse(unproc, codes.KexKeyIdNotRegistered, at(nil))
 		}
 		if seen[w.Member] {
 			// The digest sorts by (member_id, kex_key_id), so a duplicate would
 			// make the commitment depend on which copy the server kept.
-			return nil, refuse(unproc, codes.DuplicateKeywrapMember, nil)
+			return nil, refuse(unproc, codes.DuplicateKeywrapMember, at(nil))
 		}
 		seen[w.Member] = true
 	}
@@ -128,7 +153,8 @@ func (p *Publisher) Publish(_ context.Context, tx oplog.Tx, caller [16]byte, up 
 			return nil, storeDown()
 		}
 		if !same {
-			return nil, refuse(http.StatusConflict, codes.KeywrapAlreadyWritten, nil)
+			return nil, refuse(http.StatusConflict, codes.KeywrapAlreadyWritten,
+				map[string]any{"epoch": up.Epoch})
 		}
 		return p.echo(tx, caller, up.Epoch)
 	}
@@ -138,7 +164,8 @@ func (p *Publisher) Publish(_ context.Context, tx oplog.Tx, caller [16]byte, up 
 	commitment := up.Digest
 	if up.Epoch == 0 {
 		if !up.HasDigest {
-			return nil, refuse(unproc, codes.MissingKeywrapDigest, nil)
+			return nil, refuse(unproc, codes.MissingKeywrapDigest,
+				map[string]any{"epoch": up.Epoch})
 		}
 	} else {
 		// Ordering is the client's to get right: author the rotate, let it land,
@@ -146,7 +173,8 @@ func (p *Publisher) Publish(_ context.Context, tx oplog.Tx, caller [16]byte, up 
 		// because a digest the log has not committed to is just a number the
 		// uploader chose.
 		if !stored {
-			return nil, refuse(http.StatusConflict, codes.RotateNotMaterialised, nil)
+			return nil, refuse(http.StatusConflict, codes.RotateNotMaterialised,
+				map[string]any{"epoch": up.Epoch})
 		}
 		commitment = record.Digest
 	}
@@ -160,7 +188,13 @@ func (p *Publisher) Publish(_ context.Context, tx oplog.Tx, caller [16]byte, up 
 		// The wraps an epoch was published with are not a later caller's to
 		// replace: allowing it would let a stolen authority credential swap the
 		// key set out from under devices that already read it.
-		return nil, refuse(unproc, codes.KeywrapDigestMismatch, nil)
+		// expected_digest is what the log committed to, so an uploader that built
+		// the set against a stale view can see which one it missed rather than
+		// guessing at which member it got wrong.
+		return nil, refuse(unproc, codes.KeywrapDigestMismatch, map[string]any{
+			"epoch":           up.Epoch,
+			"expected_digest": base64.StdEncoding.EncodeToString(commitment[:]),
+		})
 	}
 
 	// A byte-identical replay at epoch >= 1 matched the committed digest and is

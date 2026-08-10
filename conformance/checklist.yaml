@@ -1608,7 +1608,7 @@ items:
   subject: server
   observable: black-box
   codes: [vault_version_regression]
-  test: tests/conformance/test_vault.py::test_trust_on_first_use
+  test: tests/conformance/test_keyplane.py::test_the_first_write_is_version_one
 
 - id: CONF-ESC-002
   requirement: >
@@ -1618,7 +1618,7 @@ items:
   subject: server
   observable: black-box
   codes: [bad_vault_signature]
-  test: tests/conformance/test_vault.py::test_unpinned_root_cannot_overwrite
+  test: tests/conformance/test_keyplane.py::test_the_root_is_pinned_by_the_first_write
 
 - id: CONF-ESC-003
   requirement: A write at or below the stored version answers 409 vault_version_regression with that version.
@@ -1626,7 +1626,7 @@ items:
   subject: server
   observable: black-box
   codes: [vault_version_regression]
-  test: tests/conformance/test_vault.py::test_version_monotonic
+  test: tests/conformance/test_keyplane.py::test_versions_only_go_up
 
 - id: CONF-ESC-004
   requirement: >
@@ -1636,7 +1636,7 @@ items:
   subject: server
   observable: black-box
   codes: [malformed_vault_blob, malformed_vault_signature, malformed_root_pk, malformed_vault_version]
-  test: tests/conformance/test_vault.py::test_field_validation
+  test: tests/conformance/test_keyplane.py::test_the_blob_is_never_length_checked
 
 - id: CONF-ESC-005
   requirement: GET on an unwritten slot answers 404 no_vault_record and spends no quota.
@@ -1644,7 +1644,7 @@ items:
   subject: server
   observable: black-box
   codes: [no_vault_record, vault_fetch_rate_limited]
-  test: tests/conformance/test_vault.py::test_existence_before_quota
+  test: tests/conformance/test_keyplane.py::test_an_unwritten_slot_is_not_found
 
 - id: CONF-ESC-006
   requirement: >
@@ -1681,7 +1681,7 @@ items:
   subject: server
   observable: black-box
   codes: [bad_vault_signature]
-  test: tests/conformance/test_vault.py::test_pin_moves_only_under_outgoing_root
+  test: tests/conformance/test_keyplane.py::test_the_pin_moves_only_when_the_pinned_root_says_so
 
 - id: CONF-ESC-010
   requirement: >
@@ -1691,7 +1691,7 @@ items:
   subject: server
   observable: black-box
   codes: [not_found]
-  test: tests/conformance/test_vault.py::test_malformed_locator_is_unrouted
+  test: tests/conformance/test_keyplane.py::test_a_locator_that_is_not_64_lowercase_hex
 
 # ── Root handover ────────────────────────────────────────────────────────────
 
@@ -1754,7 +1754,7 @@ items:
   subject: server
   observable: black-box
   codes: [rotate_not_materialised]
-  test: tests/conformance/test_keyplane.py::test_rotate_must_precede_wraps
+  test: tests/conformance/test_keyplane.py::test_an_unmaterialised_epoch_has_no_wraps
 
 - id: CONF-KEY-002
   requirement: >
@@ -1764,7 +1764,7 @@ items:
   subject: server
   observable: black-box
   codes: [keywrap_digest_mismatch]
-  test: tests/conformance/test_keyplane.py::test_digest_gate
+  test: tests/conformance/test_keyplane.py::test_a_set_must_hash_to_the_committed_digest
 
 - id: CONF-KEY-003
   requirement: >
@@ -1775,7 +1775,7 @@ items:
   subject: server
   observable: black-box
   codes: [missing_keywrap_digest, malformed_keywrap_digest]
-  test: tests/conformance/test_keyplane.py::test_epoch_zero_digest
+  test: tests/conformance/test_keyplane.py::test_epoch_zero_needs_a_digest_until_it_has_one
 
 - id: CONF-KEY-004
   requirement: A byte-identical re-upload answers 200; a different set for a written epoch is refused.
@@ -1783,7 +1783,7 @@ items:
   subject: server
   observable: black-box
   codes: [keywrap_digest_mismatch, keywrap_already_written]
-  test: tests/conformance/test_keyplane.py::test_replay_and_replacement
+  test: tests/conformance/test_keyplane.py::test_a_written_epoch_takes_the_same_set_only
 
 - id: CONF-KEY-005
   requirement: >
@@ -1793,7 +1793,7 @@ items:
   subject: server
   observable: black-box
   codes: [malformed_keywrap, malformed_kex_key_id, unknown_keywrap_member, kex_key_id_not_registered, duplicate_keywrap_member]
-  test: tests/conformance/test_keyplane.py::test_entry_validation
+  test: tests/conformance/test_keyplane.py::test_per_entry_validation_names_the_entry
 
 - id: CONF-KEY-006
   requirement: >
@@ -1807,7 +1807,7 @@ items:
   subject: server
   observable: black-box
   codes: [malformed_escrow_wrap, malformed_key_epoch, no_live_grant, keywrap_requires_owner]
-  test: tests/conformance/test_keyplane.py::test_top_level_validation
+  test: tests/conformance/test_keyplane.py::test_the_byte_fields_keep_their_own_codes_at_the_decoder
 
 - id: CONF-KEY-007
   requirement: A non-authority member uploading wraps is refused 403 keywrap_requires_owner with revoked.
@@ -1815,7 +1815,7 @@ items:
   subject: server
   observable: black-box
   codes: [keywrap_requires_owner]
-  test: tests/conformance/test_keyplane.py::test_owner_only
+  test: tests/conformance/test_keyplane.py::test_publishing_is_an_authoritys_act
 
 - id: CONF-KEY-008
   requirement: >
@@ -1825,7 +1825,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_keyplane.py::test_own_wraps_only
+  test: tests/conformance/test_keyplane.py::test_my_wraps_are_mine_alone
 
 - id: CONF-KEY-009
   requirement: >
@@ -1835,7 +1835,7 @@ items:
   subject: server
   observable: black-box
   codes: [no_live_grant]
-  test: tests/conformance/test_keyplane.py::test_epoch_keys
+  test: tests/conformance/test_keyplane.py::test_epoch_keys_needs_a_live_grant
 
 - id: CONF-KEY-010
   requirement: Two concurrent uploads of one epoch resolve idempotently or with a documented refusal, never a 500.
@@ -1855,7 +1855,7 @@ items:
   subject: client
   observable: black-box
   codes: []
-  test: tests/conformance/client/test_keyplane.py::test_join_requires_rotation
+  test: tests/conformance/test_keyplane.py::test_a_device_admitted_after_an_epoch_holds_none_of_it
 
 - id: CONF-KEY-012
   requirement: >
@@ -1866,7 +1866,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_keyplane.py::test_own_wraps_paging
+  test: tests/conformance/test_keyplane.py::test_my_wraps_pages_by_epoch
 
 - id: CONF-KEY-013
   requirement: >
@@ -1877,7 +1877,7 @@ items:
   subject: server
   observable: black-box
   codes: [malformed_request, unknown_request_field]
-  test: tests/conformance/test_keyplane.py::test_own_wraps_query_validation
+  test: tests/conformance/test_keyplane.py::test_paging_parameters_are_never_clamped
 
 - id: CONF-KEY-014
   requirement: >
@@ -1889,7 +1889,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_keyplane.py::test_epoch_keys_paging
+  test: tests/conformance/test_keyplane.py::test_epoch_keys_omits_an_epoch_with_no_escrow_wrap
 
 - id: CONF-KEY-015
   requirement: >
@@ -1900,7 +1900,7 @@ items:
   subject: server
   observable: black-box
   codes: [malformed_request, unknown_request_field]
-  test: tests/conformance/test_keyplane.py::test_epoch_keys_query_validation
+  test: tests/conformance/test_keyplane.py::test_paging_parameters_are_never_clamped
 
 # ── Discipline ───────────────────────────────────────────────────────────────
 

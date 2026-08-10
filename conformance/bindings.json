@@ -105,6 +105,36 @@
     "CONF-DISC-003": [
       "test_health.py::test_every_429_carries_retry_after"
     ],
+    "CONF-ESC-001": [
+      "test_keyplane.py::test_the_first_write_is_version_one"
+    ],
+    "CONF-ESC-002": [
+      "test_keyplane.py::test_the_root_is_pinned_by_the_first_write"
+    ],
+    "CONF-ESC-003": [
+      "test_keyplane.py::test_versions_only_go_up"
+    ],
+    "CONF-ESC-004": [
+      "test_keyplane.py::test_vault_fields_are_refused_individually[!!-SIG-PK-1-malformed_vault_blob]",
+      "test_keyplane.py::test_vault_fields_are_refused_individually[AA==-AA==-PK-1-malformed_vault_signature]",
+      "test_keyplane.py::test_vault_fields_are_refused_individually[AA==-SIG-AA==-1-malformed_root_pk]",
+      "test_keyplane.py::test_vault_fields_are_refused_individually[AA==-SIG-PK-0-malformed_vault_version]",
+      "test_keyplane.py::test_the_blob_is_never_length_checked"
+    ],
+    "CONF-ESC-005": [
+      "test_keyplane.py::test_an_unwritten_slot_is_not_found"
+    ],
+    "CONF-ESC-009": [
+      "test_keyplane.py::test_the_pin_moves_only_when_the_pinned_root_says_so"
+    ],
+    "CONF-ESC-010": [
+      "test_keyplane.py::test_a_locator_that_is_not_64_lowercase_hex[short]",
+      "test_keyplane.py::test_a_locator_that_is_not_64_lowercase_hex[ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ]",
+      "test_keyplane.py::test_a_locator_that_is_not_64_lowercase_hex[AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA]",
+      "test_keyplane.py::test_a_locator_that_is_not_64_lowercase_hex[aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa]",
+      "test_keyplane.py::test_a_locator_that_is_not_64_lowercase_hex[aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa]",
+      "test_keyplane.py::test_a_locator_that_is_not_64_lowercase_hex[]"
+    ],
     "CONF-HAND-001": [
       "test_authority.py::test_handover_names_the_current_root"
     ],
@@ -122,6 +152,76 @@
     ],
     "CONF-HEALTH-007": [
       "test_health.py::test_op_classes_covers_every_range"
+    ],
+    "CONF-KEY-001": [
+      "test_keyplane.py::test_an_unmaterialised_epoch_has_no_wraps"
+    ],
+    "CONF-KEY-002": [
+      "test_keyplane.py::test_a_set_must_hash_to_the_committed_digest"
+    ],
+    "CONF-KEY-003": [
+      "test_keyplane.py::test_epoch_zero_needs_a_digest_until_it_has_one",
+      "test_keyplane.py::test_the_byte_fields_keep_their_own_codes_at_the_decoder[escrow_wrap_b64-!!-malformed_escrow_wrap]",
+      "test_keyplane.py::test_the_byte_fields_keep_their_own_codes_at_the_decoder[keywrap_digest_b64-!!-malformed_keywrap_digest]",
+      "test_keyplane.py::test_the_byte_fields_keep_their_own_codes_at_the_decoder[keywrap_digest_b64-AA==-malformed_keywrap_digest]"
+    ],
+    "CONF-KEY-004": [
+      "test_keyplane.py::test_a_written_epoch_takes_the_same_set_only"
+    ],
+    "CONF-KEY-005": [
+      "test_keyplane.py::test_per_entry_validation_names_the_entry[wrap-malformed_keywrap]",
+      "test_keyplane.py::test_per_entry_validation_names_the_entry[kex_key_id-malformed_kex_key_id]",
+      "test_keyplane.py::test_per_entry_validation_names_the_entry[member-unknown_keywrap_member]",
+      "test_keyplane.py::test_per_entry_validation_names_the_entry[kex_unregistered-kex_key_id_not_registered]",
+      "test_keyplane.py::test_per_entry_validation_names_the_entry[duplicate-duplicate_keywrap_member]"
+    ],
+    "CONF-KEY-006": [
+      "test_keyplane.py::test_the_two_top_level_fields_sit_at_documented_positions",
+      "test_keyplane.py::test_the_byte_fields_keep_their_own_codes_at_the_decoder[escrow_wrap_b64-!!-malformed_escrow_wrap]",
+      "test_keyplane.py::test_the_byte_fields_keep_their_own_codes_at_the_decoder[keywrap_digest_b64-!!-malformed_keywrap_digest]",
+      "test_keyplane.py::test_the_byte_fields_keep_their_own_codes_at_the_decoder[keywrap_digest_b64-AA==-malformed_keywrap_digest]"
+    ],
+    "CONF-KEY-007": [
+      "test_keyplane.py::test_publishing_is_an_authoritys_act"
+    ],
+    "CONF-KEY-008": [
+      "test_keyplane.py::test_my_wraps_are_mine_alone"
+    ],
+    "CONF-KEY-009": [
+      "test_keyplane.py::test_epoch_keys_needs_a_live_grant"
+    ],
+    "CONF-KEY-011": [
+      "test_keyplane.py::test_a_device_admitted_after_an_epoch_holds_none_of_it"
+    ],
+    "CONF-KEY-012": [
+      "test_keyplane.py::test_my_wraps_pages_by_epoch"
+    ],
+    "CONF-KEY-013": [
+      "test_keyplane.py::test_paging_parameters_are_never_clamped[?limit=0-malformed_request-my_wraps]",
+      "test_keyplane.py::test_paging_parameters_are_never_clamped[?limit=0-malformed_request-epoch_keys]",
+      "test_keyplane.py::test_paging_parameters_are_never_clamped[?limit=100000-malformed_request-my_wraps]",
+      "test_keyplane.py::test_paging_parameters_are_never_clamped[?limit=100000-malformed_request-epoch_keys]",
+      "test_keyplane.py::test_paging_parameters_are_never_clamped[?after_epoch=4294967296-malformed_request-my_wraps]",
+      "test_keyplane.py::test_paging_parameters_are_never_clamped[?after_epoch=4294967296-malformed_request-epoch_keys]",
+      "test_keyplane.py::test_paging_parameters_are_never_clamped[?after_epoch=-1-malformed_request-my_wraps]",
+      "test_keyplane.py::test_paging_parameters_are_never_clamped[?after_epoch=-1-malformed_request-epoch_keys]",
+      "test_keyplane.py::test_paging_parameters_are_never_clamped[?cursor=abc-unknown_request_field-my_wraps]",
+      "test_keyplane.py::test_paging_parameters_are_never_clamped[?cursor=abc-unknown_request_field-epoch_keys]"
+    ],
+    "CONF-KEY-014": [
+      "test_keyplane.py::test_epoch_keys_omits_an_epoch_with_no_escrow_wrap"
+    ],
+    "CONF-KEY-015": [
+      "test_keyplane.py::test_paging_parameters_are_never_clamped[?limit=0-malformed_request-my_wraps]",
+      "test_keyplane.py::test_paging_parameters_are_never_clamped[?limit=0-malformed_request-epoch_keys]",
+      "test_keyplane.py::test_paging_parameters_are_never_clamped[?limit=100000-malformed_request-my_wraps]",
+      "test_keyplane.py::test_paging_parameters_are_never_clamped[?limit=100000-malformed_request-epoch_keys]",
+      "test_keyplane.py::test_paging_parameters_are_never_clamped[?after_epoch=4294967296-malformed_request-my_wraps]",
+      "test_keyplane.py::test_paging_parameters_are_never_clamped[?after_epoch=4294967296-malformed_request-epoch_keys]",
+      "test_keyplane.py::test_paging_parameters_are_never_clamped[?after_epoch=-1-malformed_request-my_wraps]",
+      "test_keyplane.py::test_paging_parameters_are_never_clamped[?after_epoch=-1-malformed_request-epoch_keys]",
+      "test_keyplane.py::test_paging_parameters_are_never_clamped[?cursor=abc-unknown_request_field-my_wraps]",
+      "test_keyplane.py::test_paging_parameters_are_never_clamped[?cursor=abc-unknown_request_field-epoch_keys]"
     ],
     "CONF-LOG-001": [
       "test_oplog.py::test_a_refused_batch_leaves_nothing"

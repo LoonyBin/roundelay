@@ -86,10 +86,15 @@ func (v *Vault) Write(ctx context.Context, locator [32]byte, w *VaultWrite) (*Sl
 	if found {
 		stored = existing.Version
 	}
-	// stored_version is 0 when nothing is stored, so "a create must be version 1"
-	// reads unambiguously off it. One version rule for a client to handle, not
-	// two.
-	if w.Version <= stored {
+	// A first write must be version 1, not merely above the zero that stands for
+	// "nothing stored". The looser reading — one rule, strictly greater than
+	// stored — admits a slot created at version 17, and every client that later
+	// reasons about how many times a slot has been written is then reasoning
+	// about a number the first writer chose.
+	//
+	// stored_version is 0 in that case, so the two rules still report through one
+	// field: a client sees what is there and writes one above it.
+	if w.Version <= stored || (!found && w.Version != 1) {
 		return nil, refuse(http.StatusConflict, codes.VaultVersionRegression,
 			map[string]any{"stored_version": stored})
 	}
