@@ -73,20 +73,24 @@ type state struct {
 	amendIDs        map[[16]byte]bool
 	epochs          []uint32
 	digests         map[uint32][32]byte
+	epochRecords    map[uint32]oplog.EpochRecord
+	wraps           map[uint32][]oplog.MemberWrap
 	sessionsEnded   [][16]byte
 }
 
 func newState() *state {
 	return &state{
-		registered:  map[[16]byte]bool{},
-		keyIDs:      map[keyKey][][8]byte{},
-		bindings:    map[bindingKey][]interval{},
-		members:     map[[16]byte]oplog.MemberRecord{},
-		controlKeys: map[[16]byte][]keyInterval{},
-		grants:      map[[16]byte]oplog.Grant{},
-		delegations: map[[16]byte]oplog.Delegation{},
-		amendIDs:    map[[16]byte]bool{},
-		digests:     map[uint32][32]byte{},
+		registered:   map[[16]byte]bool{},
+		keyIDs:       map[keyKey][][8]byte{},
+		bindings:     map[bindingKey][]interval{},
+		members:      map[[16]byte]oplog.MemberRecord{},
+		controlKeys:  map[[16]byte][]keyInterval{},
+		grants:       map[[16]byte]oplog.Grant{},
+		delegations:  map[[16]byte]oplog.Delegation{},
+		amendIDs:     map[[16]byte]bool{},
+		digests:      map[uint32][32]byte{},
+		epochRecords: map[uint32]oplog.EpochRecord{},
+		wraps:        map[uint32][]oplog.MemberWrap{},
 	}
 }
 
@@ -110,10 +114,15 @@ func (s *state) clone() *state {
 		amendIDs:        maps.Clone(s.amendIDs),
 		epochs:          slices.Clone(s.epochs),
 		digests:         maps.Clone(s.digests),
+		epochRecords:    maps.Clone(s.epochRecords),
+		wraps:           map[uint32][]oplog.MemberWrap{},
 		sessionsEnded:   slices.Clone(s.sessionsEnded),
 	}
 	for k, v := range s.controlKeys {
 		c.controlKeys[k] = slices.Clone(v)
+	}
+	for k, v := range s.wraps {
+		c.wraps[k] = slices.Clone(v)
 	}
 	for k, v := range s.keyIDs {
 		c.keyIDs[k] = slices.Clone(v)
@@ -624,6 +633,9 @@ func (t *tx) CurrentEpoch() (uint32, error) {
 func (t *tx) PutRotate(from, to uint32, digest [32]byte, at int64) error {
 	t.st.epochs = append(t.st.epochs, to)
 	t.st.digests[to] = digest
+	// The record exists from the rotate; the escrow wrap arrives later, and the
+	// epoch is omitted from GET /epoch-keys until it does.
+	t.st.epochRecords[to] = oplog.EpochRecord{Epoch: to, Digest: digest, RotateAt: at}
 	return nil
 }
 
@@ -778,4 +790,99 @@ func (r *readTx) Close() error {
 	r.closed = true
 	r.ws.mu.Unlock()
 	return nil
+}
+
+// ── the key plane ───────────────────────────────────────────────────────────
+
+func (t *tx) EpochRecord(epoch uint32) (*oplog.EpochRecord, bool, error) {
+	return epochRecord(t.st, epoch)
+}
+
+func epochRecord(st *state, epoch uint32) (*oplog.EpochRecord, bool, error) {
+	rec, ok := st.epochRecords[epoch]
+	if !ok {
+		return nil, false, nil
+	}
+	cp := rec
+	cp.EscrowWrap = slices.Clone(rec.EscrowWrap)
+	return &cp, true, nil
+}
+
+func (t *tx) KexKeyIDInForce(member [16]byte) ([8]byte, bool, error) {
+	rec, ok := t.st.members[member]
+	if !ok {
+		return [8]byte{}, false, nil
+	}
+	return wire.KeyID(rec.KexPK[:]), true, nil
+}
+
+func (t *tx) MemberWrapsAt(epoch uint32) ([]oplog.MemberWrap, error) {
+	return slices.Clone(t.st.wraps[epoch]), nil
+}
+
+func (t *tx) PublishWraps(epoch uint32, digest [32]byte, escrow []byte, wraps []oplog.MemberWrap) error {
+	rec := t.st.epochRecords[epoch]
+	rec.Epoch = epoch
+	rec.Digest = digest
+	rec.EscrowWrap = slices.Clone(escrow)
+	rec.Published = true
+	t.st.epochRecords[epoch] = rec
+
+	stored := make([]oplog.MemberWrap, 0, len(wraps))
+	for _, w := range wraps {
+		w.Wrap = slices.Clone(w.Wrap)
+		stored = append(stored, w)
+	}
+	t.st.wraps[epoch] = stored
+	return nil
+}
+
+func (r *readTx) ReadMemberWraps(member [16]byte, afterEpoch *uint32, limit int) (oplog.WrapPage, error) {
+	var page oplog.WrapPage
+	for _, e := range sortedEpochs(r.st) {
+		if afterEpoch != nil && e <= *afterEpoch {
+			continue
+		}
+		for _, w := range r.st.wraps[e] {
+			if w.Member != member {
+				continue
+			}
+			if len(page.Wraps) == limit {
+				page.HasMore = true
+				return page, nil
+			}
+			page.Wraps = append(page.Wraps, w)
+		}
+	}
+	return page, nil
+}
+
+func (r *readTx) ReadEpochKeys(afterEpoch *uint32, limit int) (oplog.EpochPage, error) {
+	var page oplog.EpochPage
+	for _, e := range sortedEpochs(r.st) {
+		if afterEpoch != nil && e <= *afterEpoch {
+			continue
+		}
+		rec := r.st.epochRecords[e]
+		// The window between a rotate landing and its wraps arriving.
+		if rec.EscrowWrap == nil {
+			continue
+		}
+		if len(page.Epochs) == limit {
+			page.HasMore = true
+			return page, nil
+		}
+		rec.EscrowWrap = slices.Clone(rec.EscrowWrap)
+		page.Epochs = append(page.Epochs, rec)
+	}
+	return page, nil
+}
+
+func sortedEpochs(st *state) []uint32 {
+	out := make([]uint32, 0, len(st.epochRecords))
+	for e := range st.epochRecords {
+		out = append(out, e)
+	}
+	slices.Sort(out)
+	return out
 }

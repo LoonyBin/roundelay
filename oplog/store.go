@@ -170,6 +170,7 @@ type Tx interface {
 	CloseExtBinding(member [16]byte, class byte, at int64) error
 
 	AuthorityTx
+	KeyplaneTx
 
 	Commit() error
 	Rollback() error
@@ -354,5 +355,83 @@ type ReadTx interface {
 	// ascending, `after` exclusive.
 	ReadMembers(after *[16]byte, limit int) (MemberPage, error)
 
+	KeyplaneReadTx
+
 	Close() error
+}
+
+// ── the key plane ───────────────────────────────────────────────────────────
+
+// EpochRecord is what a Workspace retains per epoch: the committed digest, the
+// escrow wrap, and the rotate position — absent at epoch 0, which no rotate
+// creates.
+type EpochRecord struct {
+	Epoch  uint32
+	Digest [32]byte
+	// EscrowWrap is nil until the set is uploaded. An epoch in that window is
+	// omitted from GET /epoch-keys: serving an empty blob would look like a wrap
+	// that fails to open — an alarm — instead of one that has not arrived.
+	EscrowWrap []byte
+	RotateAt   int64
+	// Published reports whether a wrap set has landed for this epoch. A published
+	// set is final.
+	Published bool
+}
+
+// MemberWrap is one device's sealed copy of an epoch key.
+type MemberWrap struct {
+	Epoch    uint32
+	Member   [16]byte
+	KexKeyID [8]byte
+	Wrap     []byte
+}
+
+// KeyplaneTx is the half of a transaction the key plane writes.
+type KeyplaneTx interface {
+	// EpochRecord reads what is retained for one epoch.
+	EpochRecord(epoch uint32) (*EpochRecord, bool, error)
+
+	// KexKeyIDInForce is the id derived from this device's sealing key in force
+	// in this Workspace — its registration's, until a member_amend installs
+	// another. Never a claim: a wrap sealed to some other key would be
+	// undeliverable, and the device would look orphaned for a reason nothing in
+	// the log explained.
+	KexKeyIDInForce(member [16]byte) ([8]byte, bool, error)
+
+	// MemberWrapsAt returns the set published for one epoch, for comparing a
+	// replay against what is stored.
+	MemberWrapsAt(epoch uint32) ([]MemberWrap, error)
+
+	// PublishWraps stores an epoch's whole set. Never incremental: the digest
+	// commits to the whole set, so a partial upload could not be checked against
+	// it, and accepting one would restore exactly the curation power the digest
+	// exists to remove.
+	PublishWraps(epoch uint32, digest [32]byte, escrow []byte, wraps []MemberWrap) error
+}
+
+// WrapPage is one page of a device's own wraps.
+type WrapPage struct {
+	Wraps   []MemberWrap
+	HasMore bool
+}
+
+// EpochPage is one page of escrow wraps.
+type EpochPage struct {
+	Epochs  []EpochRecord
+	HasMore bool
+}
+
+// KeyplaneReadTx is the half of a read the key plane serves.
+type KeyplaneReadTx interface {
+	// ReadMemberWraps serves one device's own wraps, ordered by epoch ascending.
+	// Every epoch, kept for ever: reprised ops are retained, so content sealed at
+	// any past epoch may still need opening.
+	ReadMemberWraps(member [16]byte, afterEpoch *uint32, limit int) (WrapPage, error)
+
+	// ReadEpochKeys serves the escrow wraps, ordered by epoch ascending.
+	//
+	// Omission and paging compose without interacting: an epoch whose escrow wrap
+	// has not arrived is absent from every page, never a short page and never a
+	// gap between two, and has_more counts servable entries only.
+	ReadEpochKeys(afterEpoch *uint32, limit int) (EpochPage, error)
 }

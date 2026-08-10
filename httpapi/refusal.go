@@ -1,10 +1,13 @@
 package httpapi
 
 import (
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"net/http"
+	"regexp"
 
 	"github.com/loonybin/roundelay/codes"
 	"github.com/loonybin/roundelay/strictjson"
@@ -87,4 +90,14 @@ func RefuseDecode(w http.ResponseWriter, err error) bool {
 		Refuse(w, codes.MalformedRequest, nil)
 	}
 	return true
+}
+
+var lowerHex64 = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// hexExact32 decodes a 64-character lowercase hex string to 32 bytes.
+func hexExact32(s string) ([]byte, error) {
+	if !lowerHex64.MatchString(s) {
+		return nil, errors.New("httpapi: not 64 lowercase hex characters")
+	}
+	return hex.DecodeString(s)
 }

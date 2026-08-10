@@ -313,3 +313,52 @@ func (a *Authority) Bar1(tx oplog.ReadTx, member [16]byte) *oplog.Refusal {
 	}
 	return nil
 }
+
+// Bar2 is the second credential bar: a member holding a live grant here.
+//
+// GET /epoch-keys sits at it. The bar is deliberately low — anyone who can open
+// an escrow wrap can already open Root — but it is not bar 1: a device with no
+// grant at all has no business reading the recovery plane.
+func (a *Authority) Bar2(tx oplog.ReadTx, member [16]byte) *oplog.Refusal {
+	registered, err := tx.Registered(member)
+	if err != nil {
+		return storeDown()
+	}
+	if !registered {
+		return refuse(http.StatusForbidden, codes.NoRegistration, nil)
+	}
+	at, err := tx.NextSeq()
+	if err != nil {
+		return storeDown()
+	}
+	live, err := tx.LiveGrantsAt(member, at)
+	if err != nil {
+		return storeDown()
+	}
+	if len(live) == 0 {
+		return refuse(http.StatusForbidden, codes.NoLiveGrant, nil)
+	}
+	return nil
+}
+
+// OwnerAt answers the authority-role question PUT .../keywraps is gated by.
+func (a *Authority) IsOwner(tx oplog.Tx, member [16]byte) (bool, bool, bool, error) {
+	registered, err := tx.Registered(member)
+	if err != nil || !registered {
+		return false, false, false, err
+	}
+	at, err := tx.NextSeq()
+	if err != nil {
+		return true, false, false, err
+	}
+	grants, err := tx.LiveGrantsAt(member, at)
+	if err != nil {
+		return true, false, false, err
+	}
+	for _, g := range grants {
+		if g.Role == profile.OwnerRole {
+			return true, true, true, nil
+		}
+	}
+	return true, len(grants) > 0, false, nil
+}

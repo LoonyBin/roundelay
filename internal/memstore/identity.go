@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/loonybin/roundelay/identity"
+	"github.com/loonybin/roundelay/keyplane"
 )
 
 // Identity is the in-memory half of the store that authentication needs.
@@ -255,4 +256,105 @@ func (l Lookup) LiveDelegations(_ context.Context, id [16]byte) ([][32]byte, err
 		}
 	}
 	return out, nil
+}
+
+// ── the vault ───────────────────────────────────────────────────────────────
+
+// Vault is the in-memory vault store. Keyed by locator alone: a slot has no
+// owner and no Workspace.
+type Vault struct {
+	mu     sync.Mutex
+	slots  map[[32]byte]keyplane.Slot
+	audit  []FetchRecord
+	window map[[32]byte]rateWindow
+	log    *Store
+}
+
+// FetchRecord is one row of the append-only fetch audit.
+type FetchRecord struct {
+	Locator [32]byte
+	At      time.Time
+}
+
+// NewVault returns an empty vault over a log store, which it consults only to
+// answer whether a Root has founded anything.
+func NewVault(log *Store) *Vault {
+	return &Vault{slots: map[[32]byte]keyplane.Slot{}, window: map[[32]byte]rateWindow{}, log: log}
+}
+
+var _ keyplane.VaultStore = (*Vault)(nil)
+
+func (v *Vault) Slot(_ context.Context, locator [32]byte) (*keyplane.Slot, bool, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	s, ok := v.slots[locator]
+	if !ok {
+		return nil, false, nil
+	}
+	return &s, true, nil
+}
+
+// PutSlot writes iff the slot has not moved since the caller read it.
+func (v *Vault) PutSlot(_ context.Context, s keyplane.Slot, expected int64) (bool, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	current := int64(0)
+	if existing, ok := v.slots[s.Locator]; ok {
+		current = existing.Version
+	}
+	if current != expected {
+		return false, nil
+	}
+	v.slots[s.Locator] = s
+	return true, nil
+}
+
+func (v *Vault) RootHasWorkspace(_ context.Context, root [32]byte) (bool, error) {
+	v.log.mu.Lock()
+	defer v.log.mu.Unlock()
+	for _, w := range v.log.ws {
+		w.mu.Lock()
+		match := w.st.exists && w.st.hasRoot && w.st.root == root
+		w.mu.Unlock()
+		if match {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (v *Vault) RecordFetch(_ context.Context, locator [32]byte, at time.Time) error {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.audit = append(v.audit, FetchRecord{Locator: locator, At: at})
+	return nil
+}
+
+func (v *Vault) CountFetch(_ context.Context, locator [32]byte, now time.Time, window time.Duration, limit int) (bool, time.Duration, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	w, ok := v.window[locator]
+	if !ok || !now.Before(w.opened.Add(window)) {
+		v.window[locator] = rateWindow{opened: now, count: 1}
+		return true, 0, nil
+	}
+	if w.count >= limit {
+		remaining := w.opened.Add(window).Sub(now)
+		if remaining < 0 {
+			remaining = 0
+		}
+		return false, remaining, nil
+	}
+	w.count++
+	v.window[locator] = w
+	return true, 0, nil
+}
+
+// Audit returns the fetch trail, for assertions.
+func (v *Vault) Audit() []FetchRecord {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	out := make([]FetchRecord, len(v.audit))
+	copy(out, v.audit)
+	return out
 }
