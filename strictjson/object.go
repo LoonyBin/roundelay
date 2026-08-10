@@ -338,3 +338,74 @@ func (o *Object) Authority(name string) ([16]byte, bool) {
 func (o *Object) Unknown(name string) {
 	o.b.unknown = append(o.b.unknown, join(o.path, name))
 }
+
+// Int reads element i as an integer against an inclusive range.
+func (a *Array) Int(i int, r Range) int64 {
+	path := join(a.path, strconv.Itoa(i))
+	e := a.element(i, path, kindNumber)
+	if e == nil {
+		return 0
+	}
+	n, err := integer(e.num)
+	if err != nil {
+		a.b.bad(path, err.Error())
+		return 0
+	}
+	if n < r.Lo || n > r.Hi {
+		a.b.bad(path, fmt.Sprintf("is %d, want %d..%d", n, r.Lo, r.Hi))
+		return 0
+	}
+	return n
+}
+
+// Hex reads element i as lowercase hex of an exact decoded length.
+func (a *Array) Hex(i, n int) []byte {
+	path := join(a.path, strconv.Itoa(i))
+	e := a.element(i, path, kindString)
+	if e == nil {
+		return nil
+	}
+	out, err := hexExact(e.str, n)
+	if err != nil {
+		a.b.bad(path, err.Error())
+		return nil
+	}
+	return out
+}
+
+// Exactly records a problem unless the array has exactly n elements. A tuple —
+// an HLC's three members, say — is a shape rather than a list.
+func (a *Array) Exactly(n int) {
+	if a.dead || a.v == nil {
+		return
+	}
+	if len(a.v.arr) != n {
+		a.b.bad(a.path, fmt.Sprintf("has %d elements, want exactly %d", len(a.v.arr), n))
+	}
+}
+
+func (a *Array) element(i int, path string, want kind) *value {
+	if a.dead || a.v == nil {
+		return nil
+	}
+	if i < 0 || i >= len(a.v.arr) {
+		a.b.bad(path, "is missing")
+		return nil
+	}
+	e := a.v.arr[i]
+	if e.kind != want {
+		a.b.bad(path, fmt.Sprintf("is %s, want %s", e.kind, want))
+		return nil
+	}
+	return e
+}
+
+// Reject records a problem against a member the caller judged for itself. It is
+// for a rule the accessors cannot express — a value that must agree with another
+// value in the same document.
+func (o *Object) Reject(name, reason string) {
+	if o.dead {
+		return
+	}
+	o.b.bad(join(o.path, name), reason)
+}
