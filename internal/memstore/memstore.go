@@ -138,7 +138,16 @@ type workspace struct {
 type Store struct {
 	mu sync.Mutex
 	ws map[[16]byte]*workspace
+
+	// onSessionsEnded fans the cascade out to whatever holds sessions. It fires
+	// after the commit, because every effect a control op causes does — before
+	// it, a rolled-back batch would have killed a live session for nothing.
+	onSessionsEnded func(member [16]byte)
 }
+
+// OnSessionsEnded registers the cascade's fan-out. A deployment points this at
+// its token table and its socket registry.
+func (s *Store) OnSessionsEnded(f func(member [16]byte)) { s.onSessionsEnded = f }
 
 // New returns an empty store.
 func New() *Store { return &Store{ws: map[[16]byte]*workspace{}} }
@@ -159,7 +168,7 @@ func (s *Store) workspace(id [16]byte) *workspace {
 func (s *Store) BeginAppend(_ context.Context, id [16]byte) (oplog.Tx, error) {
 	w := s.workspace(id)
 	w.mu.Lock()
-	return &tx{ws: w, id: id, st: w.st.clone()}, nil
+	return &tx{store: s, ws: w, id: id, st: w.st.clone(), endedBefore: len(w.st.sessionsEnded)}, nil
 }
 
 // Seed applies a mutation outside the append path, for building a fixture.
@@ -218,10 +227,12 @@ func (s *Store) Ops(id [16]byte) []oplog.StoredOp {
 }
 
 type tx struct {
-	ws     *workspace
-	id     [16]byte
-	st     *state
-	closed bool
+	store       *Store
+	ws          *workspace
+	id          [16]byte
+	st          *state
+	closed      bool
+	endedBefore int
 }
 
 var errClosed = errors.New("memstore: transaction is closed")
@@ -360,7 +371,14 @@ func (t *tx) Commit() error {
 	}
 	t.closed = true
 	t.ws.st = t.st
+	ended := slices.Clone(t.st.sessionsEnded[t.endedBefore:])
 	t.ws.mu.Unlock()
+	// After the commit, and only what this batch established.
+	if t.store != nil && t.store.onSessionsEnded != nil {
+		for _, m := range ended {
+			t.store.onSessionsEnded(m)
+		}
+	}
 	return nil
 }
 
