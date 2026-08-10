@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"bytes"
+	"io"
 	"net/http"
 	"regexp"
 	"slices"
@@ -131,3 +133,40 @@ func notFound(w http.ResponseWriter) { Refuse(w, codes.NotFound, nil) }
 // NotFound writes the ordinary unrouted answer. A contract version's own mux
 // uses it for a suffix it does not serve.
 func NotFound(w http.ResponseWriter, _ *http.Request) { notFound(w) }
+
+// BoundBodies refuses a request body over the deployment's bound, on any route.
+//
+// It wraps the whole router rather than sitting in each handler because "on any
+// route" is the rule, and a rule enforced handler by handler is one route away
+// from being false. A handler that never reads its body is covered too, which
+// matters: the cost this bounds is buffering the bytes, and that has already
+// been paid by the time a handler decides it does not want them.
+//
+// Content-Length is checked first and is only a hint — a chunked body carries
+// none — so the read is capped as well and the two agree on the verdict.
+func BoundBodies(limit int64, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if limit <= 0 || r.Body == nil {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if r.ContentLength > limit {
+			RefuseStatus(w, http.StatusRequestEntityTooLarge, codes.RequestTooLarge, nil)
+			return
+		}
+		// One byte past the bound is enough to know, and no more than that is
+		// ever held: a body that is too large is refused rather than buffered.
+		buf, err := io.ReadAll(io.LimitReader(r.Body, limit+1))
+		if err != nil {
+			Refuse(w, codes.MalformedRequest, nil)
+			return
+		}
+		if int64(len(buf)) > limit {
+			RefuseStatus(w, http.StatusRequestEntityTooLarge, codes.RequestTooLarge, nil)
+			return
+		}
+		r.Body = io.NopCloser(bytes.NewReader(buf))
+		r.ContentLength = int64(len(buf))
+		next.ServeHTTP(w, r)
+	})
+}

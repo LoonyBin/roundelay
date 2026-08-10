@@ -18,6 +18,8 @@ import (
 	"os"
 	ossignal "os/signal"
 	"regexp"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -38,9 +40,14 @@ func main() {
 	dsn := flag.String("dsn", os.Getenv("ROUNDELAY_DSN"), "Postgres DSN; empty uses the in-memory store")
 	version := flag.String("version", "0.0.1", "the deploy label GET /health reports")
 	admission := flag.String("admission", "open", "open | token:<value>")
+	// Two rows the reference answers "none". A deployment that takes them up is
+	// a different deployment, and several conformance items are about exactly
+	// what changes when it does — so they are knobs rather than constants.
+	opaque := flag.String("opaque-classes", "", "comma-separated hex classes in 40-7f, e.g. 40,41")
+	extensions := flag.String("extension-classes", "", "comma-separated <hex>=<name>, e.g. cc=purge")
 	flag.Parse()
 
-	if err := run(*addr, *dsn, *version, *admission); err != nil {
+	if err := run(*addr, *dsn, *version, *admission, *opaque, *extensions); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -50,7 +57,8 @@ func main() {
 //
 // A server refuses to start with any row unset, so this is what answering them
 // looks like rather than a set of defaults — there are none.
-func referenceProfile(version string, admission profile.Admission) *profile.Profile {
+func referenceProfile(version string, admission profile.Admission,
+	opaque []byte, extensions map[byte]string) *profile.Profile {
 	return &profile.Profile{
 		Name:              "acme/p1",
 		Namespace:         "acme",
@@ -69,8 +77,8 @@ func referenceProfile(version string, admission profile.Admission) *profile.Prof
 		GrantAdmissible:     profile.Say[profile.GrantAdmissible](nil),
 		SizeClasses:         wire.Ladder{Classes: []int{512, 4096}, Step: 4096},
 		DeployLabel:         profile.Say(regexp.MustCompile(`^\d+\.\d+\.\d+$`)),
-		OpaqueClasses:       profile.Say[[]byte](nil),
-		ExtensionClasses:    profile.Say[map[byte]string](nil),
+		OpaqueClasses:       profile.Say(opaque),
+		ExtensionClasses:    profile.Say(extensions),
 		HolderRefDerivation: "the holder's Root public key, verbatim",
 		Version:             version,
 		Limits:              profile.Defaults(),
@@ -87,7 +95,44 @@ func (a tokenAdmission) Admit(_ context.Context, got string) bool {
 	return a.want != "" && got == a.want
 }
 
-func run(addr, dsn, version, admissionSpec string) error {
+// parseOpaque reads the opaque-class list: hex bytes in 0x40-0x7f.
+func parseOpaque(spec string) ([]byte, error) {
+	if spec == "" {
+		return nil, nil
+	}
+	var out []byte
+	for _, part := range strings.Split(spec, ",") {
+		n, err := strconv.ParseUint(strings.TrimSpace(part), 16, 8)
+		if err != nil {
+			return nil, fmt.Errorf("opaque class %q: %w", part, err)
+		}
+		out = append(out, byte(n))
+	}
+	return out, nil
+}
+
+// parseExtensions reads the extension map: <hex>=<name>, the NAME being the
+// thing two deployments must agree on for one class byte to mean one thing.
+func parseExtensions(spec string) (map[byte]string, error) {
+	if spec == "" {
+		return nil, nil
+	}
+	out := map[byte]string{}
+	for _, part := range strings.Split(spec, ",") {
+		key, name, ok := strings.Cut(strings.TrimSpace(part), "=")
+		if !ok {
+			return nil, fmt.Errorf("extension class %q: want <hex>=<name>", part)
+		}
+		n, err := strconv.ParseUint(key, 16, 8)
+		if err != nil {
+			return nil, fmt.Errorf("extension class %q: %w", part, err)
+		}
+		out[byte(n)] = name
+	}
+	return out, nil
+}
+
+func run(addr, dsn, version, admissionSpec, opaqueSpec, extensionSpec string) error {
 	placement := profile.AdmissionOpen
 	var admitter identity.Admitter = identity.AdmitAll{}
 	switch {
@@ -99,7 +144,16 @@ func run(addr, dsn, version, admissionSpec string) error {
 		return fmt.Errorf("unrecognised -admission %q", admissionSpec)
 	}
 
-	prof := referenceProfile(version, placement)
+	opaque, err := parseOpaque(opaqueSpec)
+	if err != nil {
+		return err
+	}
+	extensions, err := parseExtensions(extensionSpec)
+	if err != nil {
+		return err
+	}
+
+	prof := referenceProfile(version, placement, opaque, extensions)
 	if err := prof.Validate(); err != nil {
 		return err
 	}
@@ -201,8 +255,11 @@ func run(addr, dsn, version, admissionSpec string) error {
 	router.Contract("v1", v1)
 
 	srv := &http.Server{
-		Addr:              addr,
-		Handler:           router,
+		Addr: addr,
+		// The body bound wraps everything, including /health and the socket
+		// upgrade: "on any route" is the rule, and a rule enforced route by
+		// route is one route away from being false.
+		Handler:           httpapi.BoundBodies(prof.Limits.MaxRequestBytes, router),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

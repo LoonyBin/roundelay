@@ -118,6 +118,16 @@ type Limits struct {
 	VaultFetchWindow      time.Duration
 	AccessTokenLifetime   time.Duration
 	RefreshTokenLifetime  time.Duration
+
+	// MaxRequestBytes bounds the total request body, on every route.
+	//
+	// Compatibility §8 tables no default for this one: the conventions say a
+	// deployment SHOULD bound its request bodies and MUST document the bound,
+	// leaving the number to the deployment. What is not the deployment's is the
+	// code — request_too_large is in the closed vocabulary precisely so that the
+	// one limit every route shares has a name in it. So a value lives here, and
+	// a deployment overrides it.
+	MaxRequestBytes int64
 }
 
 // Defaults are the values Compatibility §8 tables.
@@ -135,6 +145,9 @@ func Defaults() Limits {
 		VaultFetchWindow:      86400 * time.Second,
 		AccessTokenLifetime:   15 * time.Minute,
 		RefreshTokenLifetime:  365 * 24 * time.Hour,
+		// Room for a full batch: a thousand ops of the larger size class, with
+		// base64 expansion and JSON around them.
+		MaxRequestBytes: 8 << 20,
 	}
 }
 

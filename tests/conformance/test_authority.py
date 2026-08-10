@@ -93,7 +93,7 @@ def test_the_exemption_reaches_the_first_op_only(server, founded, root, enrol):
     assert got.code == "no_registration"
 
     # The same registration alone is accepted from the same unregistered device.
-    joiner.d.author_seq = 0
+    joiner.d.author_seq[ws] = 0
     joiner.pending_tip = founder.committed_tip(ws)
     assert joiner.post_ops(ws, joiner.member_register(ws)).status == 200
 

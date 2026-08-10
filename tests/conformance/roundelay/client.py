@@ -103,8 +103,11 @@ class Device:
     kex: bytes = field(init=False)
     access: str = ""
     refresh: str = ""
-    author_seq: int = 0
-    committed_seq: int = 0
+    # The author chain is per Workspace — (workspace, author, author_seq) is
+    # what must be unique — so one device writing in two Workspaces has two
+    # chains, each starting at 1.
+    author_seq: dict[bytes, int] = field(default_factory=dict)
+    committed_seq: dict[bytes, int] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.member_id = fixtures.bytes16(f"suite/{self.label}")
@@ -124,9 +127,9 @@ class Device:
     def kex_pk(self) -> bytes:
         return crypto.x25519_public(self.kex)
 
-    def next_seq(self) -> int:
-        self.author_seq += 1
-        return self.author_seq
+    def next_seq(self, workspace: bytes) -> int:
+        self.author_seq[workspace] = self.author_seq.get(workspace, 0) + 1
+        return self.author_seq[workspace]
 
     def registration_block(self, workspace: bytes | None = None) -> dict[str, Any]:
         block = {
@@ -200,7 +203,7 @@ class Session:
                  signer: bytes | None = None, key_id_of: bytes | None = None,
                  ext_name: str = "", content_key: bytes | None = None,
                  content_nonce: bytes | None = None) -> str:
-        seq = author_seq if author_seq is not None else self.d.next_seq()
+        seq = author_seq if author_seq is not None else self.d.next_seq(workspace)
         signer = signer if signer is not None else (
             self.d.control if wire.server_reads(op_class) else self.d.content
         )
@@ -244,9 +247,9 @@ class Session:
         # chain for everything after it, and the second assertion in a test
         # answers author_chain_conflict rather than what it was asking about.
         if got.status == 200:
-            self.d.committed_seq = self.d.author_seq
+            self.d.committed_seq[workspace] = self.d.author_seq.get(workspace, 0)
         else:
-            self.d.author_seq = self.d.committed_seq
+            self.d.author_seq[workspace] = self.d.committed_seq.get(workspace, 0)
         return got
 
     # ── control ops ─────────────────────────────────────────────────────────
@@ -518,6 +521,27 @@ class Session:
         return self.s.get(f"/v1/w/{fixtures.uuid(workspace)}/ops{query}",
                           token=self.d.access)
 
+    def ext_binding(self, workspace: bytes, payload: Any, **kw) -> str:
+        return self.control_class(workspace, wire.CLASS_EXT_BINDING, payload, **kw)
+
+    def bind(self, workspace: bytes, op_class: int, name: str, **kw) -> str:
+        return self.ext_binding(workspace, {
+            "type": "bind", "op_class": op_class, "name": name}, **kw)
+
+    def unbind(self, workspace: bytes, op_class: int, **kw) -> str:
+        return self.ext_binding(workspace, {"type": "unbind", "op_class": op_class}, **kw)
+
+    def ext_op(self, workspace: bytes, op_class: int, name: str,
+               text: bytes = b"ext", **kw) -> str:
+        """An op of an extension class.
+
+        The signing domain is <ns>/ext/<name>/v1, so the name the client
+        believes is bound into the signature — an op authored under the wrong
+        name does not verify, let alone mean the wrong thing.
+        """
+        return self.envelope(op_class=op_class, payload=text, workspace=workspace,
+                             ext_name=name, **kw)
+
     # ── the key plane ───────────────────────────────────────────────────────
 
     def wrap_for(self, workspace: bytes, epoch: int, member: Device,
@@ -600,7 +624,8 @@ class Session:
     def vault_read(self, locator: str) -> Response:
         return self.s.get(f"/v1/vault/{locator}")
 
-    def content(self, workspace: bytes, text: bytes = b"hello", **kw) -> str:
+    def content(self, workspace: bytes, text: bytes = b"hello", *,
+                op_class: int = wire.CLASS_CONTENT, **kw) -> str:
         return self.envelope(
-            op_class=wire.CLASS_CONTENT, payload=text, workspace=workspace, **kw
+            op_class=op_class, payload=text, workspace=workspace, **kw
         )

@@ -130,7 +130,7 @@ def test_repeats_are_free(founded):
 @pytest.mark.item("CONF-LOG-010")
 def test_author_chain_gap(founded):
     session, ws = founded
-    head = session.d.author_seq
+    head = session.d.author_seq[ws]
     got = session.post_ops(
         ws, session.content(ws, op_label="gap/one", author_seq=head + 5)
     )
@@ -207,7 +207,7 @@ def test_the_server_verifies_less_than_it_stores(founder):
 
     # A content op whose signature is garbage, whose prev_author_hash is
     # nonsense, and whose author_key_id names a key the server never saw.
-    seq = founder.d.next_seq()
+    seq = founder.d.next_seq(ws)
     header = wire.Header(
         op_class=wire.CLASS_CONTENT,
         workspace_id=ws,

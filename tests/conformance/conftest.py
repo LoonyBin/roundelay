@@ -61,27 +61,20 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
-@pytest.fixture(scope="session")
-def base_url() -> str:
-    """The server under test.
-
-    ROUNDELAY_BASE_URL points the suite at something already running — another
-    implementation, or a deployment. Otherwise this builds and starts the one in
-    this repository.
-    """
-    if url := os.environ.get("ROUNDELAY_BASE_URL"):
-        return url.rstrip("/")
-
+def _build() -> pathlib.Path:
     binary = REPO / "build" / "roundelay-server"
     binary.parent.mkdir(exist_ok=True)
     subprocess.run(
         ["go", "build", "-o", str(binary), "./cmd/roundelay-server"],
         cwd=REPO, check=True,
     )
+    return binary
 
+
+def _start(binary: pathlib.Path, *args: str) -> tuple[str, subprocess.Popen]:
     port = _free_port()
     proc = subprocess.Popen(
-        [str(binary), "-addr", f"127.0.0.1:{port}", "-admission", f"token:{ADMISSION_TOKEN}"],
+        [str(binary), "-addr", f"127.0.0.1:{port}", *args],
         cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
     )
     url = f"http://127.0.0.1:{port}"
@@ -93,19 +86,35 @@ def base_url() -> str:
             raise RuntimeError(f"server exited: {proc.stderr.read().decode()}")
         try:
             httpx.get(url + "/health", timeout=0.5)
-            break
+            return url, proc
         except Exception:
             time.sleep(0.05)
-    else:
-        proc.kill()
-        raise RuntimeError("server did not become ready")
+    proc.kill()
+    raise RuntimeError("server did not become ready")
 
-    yield url
+
+def _stop(proc: subprocess.Popen) -> None:
     proc.terminate()
     try:
         proc.wait(timeout=5)
     except subprocess.TimeoutExpired:
         proc.kill()
+
+
+@pytest.fixture(scope="session")
+def base_url() -> str:
+    """The server under test.
+
+    ROUNDELAY_BASE_URL points the suite at something already running — another
+    implementation, or a deployment. Otherwise this builds and starts the one in
+    this repository.
+    """
+    if url := os.environ.get("ROUNDELAY_BASE_URL"):
+        return url.rstrip("/")
+
+    url, proc = _start(_build(), "-admission", f"token:{ADMISSION_TOKEN}")
+    yield url
+    _stop(proc)
 
 
 @pytest.fixture
@@ -170,7 +179,7 @@ def founded(founder: Session) -> tuple[Session, bytes]:
 
 
 @pytest.fixture
-def enrol(server: Server, root: bytes):
+def enrol(root: bytes):
     """Bring a new device into an existing Workspace, the way a device joins.
 
     Register at the route, log in, post the same certificate as the device's own
@@ -182,7 +191,9 @@ def enrol(server: Server, root: bytes):
     def make(ws: bytes, inviter: Session, *, role: str | None = "participant",
              label: str | None = None, signer: bytes | None = None) -> Session:
         device = Device(label or secrets.token_hex(8))
-        session = Session(server, device, root)
+        # The inviter's server, not a fixture's: a Workspace lives on one
+        # deployment and its members join that one.
+        session = Session(inviter.s, device, root)
         cert, sig = session.register_cert(ws)
         got = session.register(cert, sig, admission=ADMISSION_TOKEN)
         assert got.status == 201, got.body
@@ -209,3 +220,69 @@ def enrol(server: Server, root: bytes):
 def gid():
     """A fresh certificate id. Reuse is a refusal in its own right."""
     return lambda: fixtures.uuid(secrets.token_bytes(16))
+
+
+# ── a second deployment ─────────────────────────────────────────────────────
+#
+# Two profile rows the reference answers "none" — opaque_classes and
+# extension_classes — change what the server serves, and a profile is fixed
+# before the first request. So the items about them need their own deployment
+# rather than their own Workspace, and get one.
+
+EXT_CLASS = 0xCC
+EXT_NAME = "purge"
+OPAQUE_CLASS = 0x40
+
+
+@pytest.fixture(scope="session")
+def ext_base_url() -> str:
+    if url := os.environ.get("ROUNDELAY_EXT_BASE_URL"):
+        yield url.rstrip("/")
+        return
+    url, proc = _start(
+        _build(),
+        "-admission", f"token:{ADMISSION_TOKEN}",
+        "-opaque-classes", f"{OPAQUE_CLASS:02x}",
+        "-extension-classes", f"{EXT_CLASS:02x}={EXT_NAME}",
+    )
+    yield url
+    _stop(proc)
+
+
+@pytest.fixture
+def ext_server(ext_base_url: str) -> Server:
+    s = Server(ext_base_url)
+    yield s
+    s.close()
+
+
+@pytest.fixture
+def ext_founded(ext_server: Server, root: bytes) -> tuple[Session, bytes]:
+    """A founded Workspace on the deployment that serves both extra classes,
+    with owner widened to author them."""
+    device = Device(secrets.token_hex(8))
+    session = Session(ext_server, device, root)
+    ws = secrets.token_bytes(16)
+    session.founding_workspace = ws  # type: ignore[attr-defined]
+    cert, sig = session.genesis_cert(ws)
+    assert session.register(cert, sig, admission=ADMISSION_TOKEN).status == 201
+    assert session.log_in().status == 200
+    got = session.post_ops(
+        ws,
+        session.genesis(ws),
+        session.grant(ws, device, "owner", fixtures.uuid(secrets.token_bytes(16))),
+    )
+    assert got.status == 200, got.body
+    session.resync()
+
+    # The initial table names neither extra class, and a role that does not name
+    # a class does not author it — so widen owner before anything else.
+    got = session.post_ops(ws, session.role_table(ws, [
+        {"role": "owner",
+         "classes": [0x01, 0x02, OPAQUE_CLASS, 0x80, 0x81, 0xBF, EXT_CLASS],
+         "prune_types": ["prune", "prune_ext", "hard_prune"]},
+        {"role": "participant", "classes": [0x01], "prune_types": []},
+    ]))
+    assert got.status == 200, got.body
+    session.resync()
+    return session, ws

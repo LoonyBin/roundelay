@@ -288,7 +288,7 @@ items:
   subject: server
   observable: white-box
   codes: []
-  test: tests/conformance/test_domains.py::test_framed_preimages
+  test: tests/conformance/test_vectors.py::test_domains_match_the_corpus
 
 - id: CONF-WIRE-009
   requirement: >
@@ -298,7 +298,7 @@ items:
   subject: server
   observable: black-box
   codes: [keywrap_digest_mismatch]
-  test: tests/conformance/test_keyplane.py::test_digest_sort_key
+  test: tests/conformance/test_keyplane.py::test_the_digest_the_server_computes_sorts_by_raw_bytes
 
 - id: CONF-WIRE-010
   requirement: HKDF uses a 32-zero-byte salt, HMAC-SHA-256, L=32, asserted against frozen wrap vectors.
@@ -306,7 +306,7 @@ items:
   subject: server
   observable: white-box
   codes: []
-  test: tests/conformance/test_keyplane.py::test_hkdf_salt
+  test: tests/conformance/test_vectors.py::test_escrow_wrap_matches_the_corpus
 
 - id: CONF-WIRE-011
   requirement: >
@@ -318,7 +318,7 @@ items:
   subject: server
   observable: black-box
   codes: [unsupported_op_class, role_forbids_op_class]
-  test: tests/conformance/test_wire.py::test_profile_opaque_classes
+  test: tests/conformance/test_extensions.py::test_a_declared_opaque_class_behaves_exactly_like_content
 
 - id: CONF-WIRE-012
   requirement: >
@@ -341,7 +341,7 @@ items:
   subject: server
   observable: black-box
   codes: [ext_class_not_active]
-  test: tests/conformance/test_wire.py::test_extension_binding_is_positional
+  test: tests/conformance/test_extensions.py::test_a_binding_binds_from_its_own_position
 
 - id: CONF-WIRE-014
   requirement: >
@@ -353,7 +353,7 @@ items:
   subject: server
   observable: black-box
   codes: [ext_name_mismatch]
-  test: tests/conformance/test_wire.py::test_extension_name_must_match
+  test: tests/conformance/test_extensions.py::test_a_wrong_name_records_no_binding
 
 - id: CONF-WIRE-015
   requirement: >
@@ -367,7 +367,7 @@ items:
   subject: server
   observable: black-box
   codes: [ext_class_not_active, ext_name_mismatch]
-  test: tests/conformance/test_wire.py::test_binding_is_member_scoped_and_of_record
+  test: tests/conformance/test_extensions.py::test_bindings_are_member_scoped
 
 - id: CONF-WIRE-016
   requirement: >
@@ -390,7 +390,7 @@ items:
   subject: server
   observable: black-box
   codes: [malformed_ext_binding_payload, unsupported_ext_binding_type]
-  test: tests/conformance/test_extensions.py::test_binding_shape_rules
+  test: tests/conformance/test_extensions.py::test_ext_binding_shape_rules
 
 - id: CONF-WIRE-018
   requirement: >
@@ -401,7 +401,7 @@ items:
   subject: server
   observable: black-box
   codes: [ext_class_not_enabled, ext_name_mismatch, ext_class_already_bound]
-  test: tests/conformance/test_extensions.py::test_bind_causes
+  test: tests/conformance/test_extensions.py::test_bind_refusals_in_order
 
 - id: CONF-WIRE-019
   requirement: >
@@ -413,7 +413,7 @@ items:
   subject: server
   observable: black-box
   codes: [ext_class_not_bound, ext_class_not_active]
-  test: tests/conformance/test_extensions.py::test_unbind_and_rebind_intervals
+  test: tests/conformance/test_extensions.py::test_unbind_closes_the_interval_and_another_may_open
 
 - id: CONF-WIRE-020
   requirement: >
@@ -423,7 +423,7 @@ items:
   subject: server
   observable: black-box
   codes: [encrypted_server_read_op]
-  test: tests/conformance/test_wire.py::test_sealed_server_read_classes
+  test: tests/conformance/test_extensions.py::test_sealing_a_served_server_read_class_that_is_not_control_or_prune
 
 - id: CONF-WIRE-021
   requirement: >
@@ -433,7 +433,7 @@ items:
   subject: server
   observable: black-box
   codes: [request_too_large]
-  test: tests/conformance/test_wire.py::test_body_size_bound
+  test: tests/conformance/test_extensions.py::test_a_body_beyond_the_bound
 
 - id: CONF-WIRE-022
   requirement: >
@@ -445,7 +445,7 @@ items:
   subject: profile
   observable: white-box
   codes: []
-  test: tests/conformance/test_domains.py::test_extension_domain_vectors
+  test: tests/conformance/test_extensions.py::test_enabling_extensions_leaves_the_core_domains_alone
 
 - id: CONF-WIRE-023
   requirement: >
@@ -2495,7 +2495,7 @@ items:
   subject: server
   observable: black-box
   codes: [admission_refused]
-  test: tests/conformance/test_admission.py::test_founding_registration_gated
+  test: tests/conformance/test_admission.py::test_a_founding_registration_the_server_declines
 
 - id: CONF-ADM-002
   requirement: >
@@ -2506,7 +2506,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_admission.py::test_gate_is_registration_only
+  test: tests/conformance/test_admission.py::test_the_gate_is_consulted_at_founding_and_nowhere_else
 
 - id: CONF-ADM-003
   requirement: >
@@ -2518,7 +2518,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_admission.py::test_joining_is_self_admitting
+  test: tests/conformance/test_admission.py::test_a_delegate_signed_registration_needs_no_admission
 
 - id: CONF-ADM-007
   requirement: >
@@ -2532,7 +2532,7 @@ items:
   subject: server
   observable: black-box
   codes: [workspace_not_created, cert_root_pk_mismatch]
-  test: tests/conformance/test_admission.py::test_joining_branch_verified
+  test: tests/conformance/test_admission.py::test_a_delegate_signature_under_the_wrong_root_names_the_root
 
 - id: CONF-ADM-008
   requirement: >
@@ -2544,7 +2544,7 @@ items:
   subject: server
   observable: black-box
   codes: [admission_refused, workspace_not_created, cert_root_pk_mismatch]
-  test: tests/conformance/test_admission.py::test_branch_is_syntactic
+  test: tests/conformance/test_admission.py::test_the_certificate_type_selects_the_branch
 
 - id: CONF-ADM-004
   requirement: >
@@ -2554,7 +2554,7 @@ items:
   subject: server
   observable: black-box
   codes: [vault_requires_genesis]
-  test: tests/conformance/test_vault.py::test_first_write_requires_genesis
+  test: tests/conformance/test_admission.py::test_a_vault_write_by_a_root_that_founded_nothing
 
 - id: CONF-ADM-005
   requirement: >
@@ -2564,7 +2564,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_vault.py::test_rewrite_not_admission_checked
+  test: tests/conformance/test_admission.py::test_a_later_vault_write_is_never_admission_checked
 
 - id: CONF-CLI-015
   requirement: >
@@ -2584,7 +2584,7 @@ items:
   subject: server
   observable: black-box
   codes: [invalid_credential]
-  test: tests/conformance/test_admission.py::test_header_scoped_to_registration
+  test: tests/conformance/test_admission.py::test_the_admission_header_is_honoured_on_one_route
 
 # ── Delegation ───────────────────────────────────────────────────────────────
 

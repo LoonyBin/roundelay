@@ -105,6 +105,11 @@ func (h *Health) Document() HealthResponse {
 			"max_page_size":            p.Limits.MaxPageSize,
 			"default_page_size":        p.Limits.DefaultPageSize,
 			"signal_keepalive_seconds": int(p.Limits.SignalKeepalive.Seconds()),
+			// The conventions say a deployment MUST document its request-body
+			// bound and do not say where. Here is where this one documents every
+			// other limit, and a bound a client cannot read is a bound it
+			// discovers by hitting it.
+			"max_request_bytes": int(p.Limits.MaxRequestBytes),
 		},
 	}
 }

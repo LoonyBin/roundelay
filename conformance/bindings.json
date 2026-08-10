@@ -1,5 +1,31 @@
 {
   "items": {
+    "CONF-ADM-001": [
+      "test_admission.py::test_a_founding_registration_the_server_declines"
+    ],
+    "CONF-ADM-002": [
+      "test_admission.py::test_the_gate_is_consulted_at_founding_and_nowhere_else"
+    ],
+    "CONF-ADM-003": [
+      "test_admission.py::test_a_joining_device_needs_no_admission",
+      "test_admission.py::test_a_delegate_signed_registration_needs_no_admission"
+    ],
+    "CONF-ADM-004": [
+      "test_admission.py::test_a_vault_write_by_a_root_that_founded_nothing"
+    ],
+    "CONF-ADM-005": [
+      "test_admission.py::test_a_later_vault_write_is_never_admission_checked"
+    ],
+    "CONF-ADM-006": [
+      "test_admission.py::test_the_admission_header_is_honoured_on_one_route"
+    ],
+    "CONF-ADM-007": [
+      "test_admission.py::test_the_joining_branch_is_checked_not_assumed",
+      "test_admission.py::test_a_delegate_signature_under_the_wrong_root_names_the_root"
+    ],
+    "CONF-ADM-008": [
+      "test_admission.py::test_the_certificate_type_selects_the_branch"
+    ],
     "CONF-AUTHZ-002": [
       "test_authority.py::test_unregistered_device_is_refused"
     ],
@@ -504,8 +530,64 @@
       "test_oplog.py::test_non_canonical_uuid_spellings[urn:uuid:0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9]",
       "test_oplog.py::test_non_canonical_uuid_spellings[0a1b2c3d4e5f60718293a4b5c6d7e8f9]"
     ],
+    "CONF-WIRE-008": [
+      "test_vectors.py::test_framing_matches_the_corpus",
+      "test_vectors.py::test_domains_match_the_corpus"
+    ],
+    "CONF-WIRE-009": [
+      "test_keyplane.py::test_the_digest_the_server_computes_sorts_by_raw_bytes"
+    ],
+    "CONF-WIRE-010": [
+      "test_vectors.py::test_member_wraps_match_the_corpus",
+      "test_vectors.py::test_escrow_wrap_matches_the_corpus"
+    ],
+    "CONF-WIRE-011": [
+      "test_extensions.py::test_an_undeclared_opaque_class_is_not_served",
+      "test_extensions.py::test_a_declared_opaque_class_behaves_exactly_like_content",
+      "test_extensions.py::test_a_declared_opaque_class_still_needs_a_role_that_names_it"
+    ],
     "CONF-WIRE-012": [
       "test_oplog.py::test_the_extension_range_is_disabled_by_default"
+    ],
+    "CONF-WIRE-013": [
+      "test_extensions.py::test_a_binding_binds_from_its_own_position"
+    ],
+    "CONF-WIRE-014": [
+      "test_extensions.py::test_a_wrong_name_records_no_binding"
+    ],
+    "CONF-WIRE-015": [
+      "test_extensions.py::test_bindings_are_member_scoped",
+      "test_extensions.py::test_the_recorded_name_is_what_the_op_is_judged_against"
+    ],
+    "CONF-WIRE-017": [
+      "test_extensions.py::test_ext_binding_shape_rules[payload0-malformed_ext_binding_payload]",
+      "test_extensions.py::test_ext_binding_shape_rules[payload1-malformed_ext_binding_payload]",
+      "test_extensions.py::test_ext_binding_shape_rules[payload2-malformed_ext_binding_payload]",
+      "test_extensions.py::test_ext_binding_shape_rules[payload3-malformed_ext_binding_payload]",
+      "test_extensions.py::test_ext_binding_shape_rules[payload4-malformed_ext_binding_payload]",
+      "test_extensions.py::test_ext_binding_shape_rules[payload5-malformed_ext_binding_payload]",
+      "test_extensions.py::test_ext_binding_shape_rules[payload6-malformed_ext_binding_payload]",
+      "test_extensions.py::test_ext_binding_shape_rules[payload7-malformed_ext_binding_payload]",
+      "test_extensions.py::test_ext_binding_shape_rules[payload8-malformed_ext_binding_payload]",
+      "test_extensions.py::test_ext_binding_shape_rules[payload9-malformed_ext_binding_payload]",
+      "test_extensions.py::test_ext_binding_shape_rules[payload10-malformed_ext_binding_payload]",
+      "test_extensions.py::test_ext_binding_shape_rules[payload11-malformed_ext_binding_payload]",
+      "test_extensions.py::test_ext_binding_shape_rules[payload12-unsupported_ext_binding_type]"
+    ],
+    "CONF-WIRE-018": [
+      "test_extensions.py::test_bind_refusals_in_order"
+    ],
+    "CONF-WIRE-019": [
+      "test_extensions.py::test_unbind_closes_the_interval_and_another_may_open"
+    ],
+    "CONF-WIRE-020": [
+      "test_extensions.py::test_sealing_a_served_server_read_class_that_is_not_control_or_prune"
+    ],
+    "CONF-WIRE-021": [
+      "test_extensions.py::test_a_body_beyond_the_bound"
+    ],
+    "CONF-WIRE-022": [
+      "test_extensions.py::test_enabling_extensions_leaves_the_core_domains_alone"
     ],
     "CONF-WIRE-023": [
       "test_oplog.py::test_selector_bytes_resolve_before_the_floor"

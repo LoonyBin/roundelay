@@ -187,6 +187,67 @@ def test_the_byte_fields_keep_their_own_codes_at_the_decoder(founded, field, val
     assert got.code == code
 
 
+@pytest.mark.item("CONF-WIRE-009")
+def test_the_digest_the_server_computes_sorts_by_raw_bytes(founded, enrol):
+    """Black-box, against a set whose two orderings disagree.
+
+    The corpus pins the sort key against a hand-built preimage; this asks the
+    server. A pair of members whose ids order one way as raw bytes and the
+    other as base64 is found by searching, because the derived fixtures happen
+    to agree and a fixture that cannot fail is not a test.
+    """
+    from roundelay.client import Device
+
+    founder, ws = founded
+
+    # The label is chosen offline: a member id is derived from it, so the pair
+    # that separates the two orderings is found without touching the server and
+    # the test enrols exactly one device every run.
+    mine = founder.d.member_id
+    label = next(
+        candidate for candidate in (f"digest-order/{i}" for i in range(10_000))
+        if (mine < Device(candidate).member_id)
+        != (fixtures.b64(mine) < fixtures.b64(Device(candidate).member_id))
+    )
+    partner = enrol(ws, founder, role=None, label=label)
+
+    wraps, escrow, digest = founder.wrap_set(ws, 0, [founder.d, partner.d])
+
+    # Uploaded in base64 order, which for this pair is not raw-byte order — the
+    # label search guarantees the two disagree. The digest is over the raw-byte
+    # order, so a server that hashed arrival order, or sorted the base64
+    # spelling, computes something else.
+    by_raw = sorted(wraps, key=lambda w: fixtures.parse_uuid(w["member_id"]))
+    by_b64 = sorted(wraps, key=lambda w: fixtures.b64(fixtures.parse_uuid(w["member_id"])))
+    assert [w["member_id"] for w in by_b64] != [w["member_id"] for w in by_raw]
+    got = founder.publish(ws, 0, by_b64, escrow, digest)
+    assert got.status == 200, got.body
+
+    # And the digest a base64 sort would have produced is refused, which is the
+    # same claim from the other side.
+    import hashlib
+    import struct
+
+    from roundelay import crypto as _crypto
+
+    rest = struct.pack(">II", 0, len(by_b64))
+    for w in by_b64:
+        rest += fixtures.parse_uuid(w["member_id"]) + fixtures.b64d(w["kex_key_id_b64"])
+        rest += hashlib.sha256(fixtures.b64d(w["wrap_b64"])).digest()
+    rest += hashlib.sha256(escrow).digest()
+    wrong = hashlib.sha256(_crypto.framed(
+        f"{founder.s.namespace}/keywrap-digest/v1", rest)).digest()
+    assert wrong != digest, "the pair is not diagnostic"
+
+    other, other_escrow, _ = founder.wrap_set(ws, 1, [founder.d, partner.d])
+    founder.resync()
+    assert founder.post_ops(ws, founder.rotate(ws, 0, 1, wrong)).status == 200
+    founder.resync()
+    got = founder.publish(ws, 1, other, other_escrow, None)
+    assert got.status == 422, got.body
+    assert got.code == "keywrap_digest_mismatch"
+
+
 # ── reading wraps back ──────────────────────────────────────────────────────
 
 

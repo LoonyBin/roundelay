@@ -32,6 +32,7 @@ def b64d(s: str) -> bytes:
     return base64.b64decode(s, validate=True)
 
 
+@pytest.mark.item("CONF-WIRE-008")
 def test_framing_matches_the_corpus():
     doc = load("framing.json")
     for case in doc["cases"]:
@@ -51,6 +52,7 @@ def test_the_collision_pair_is_separated():
     assert cases["collision_a"] != cases["collision_b"]
 
 
+@pytest.mark.item("CONF-WIRE-008")
 def test_domains_match_the_corpus():
     doc = load("domains.json")
     ns = doc["namespace"]
@@ -143,6 +145,7 @@ def test_the_control_chain_link_matches_the_corpus():
     assert doc["genesis_link_hex"] == "00" * 32
 
 
+@pytest.mark.item("CONF-WIRE-010")
 def test_member_wraps_match_the_corpus():
     doc = load("keyplane.json")
     ws = fixtures.parse_uuid(doc["workspace_id"])
@@ -168,6 +171,7 @@ def test_member_wraps_match_the_corpus():
         assert got[:32].hex() in row["info_hex"], row["label"]
 
 
+@pytest.mark.item("CONF-WIRE-010")
 def test_escrow_wrap_matches_the_corpus():
     doc = load("keyplane.json")
     ws = fixtures.parse_uuid(doc["workspace_id"])
