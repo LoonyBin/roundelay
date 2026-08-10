@@ -1,4 +1,4 @@
-.PHONY: all test vectors codes generate check fmt
+.PHONY: all test vectors codes generate conformance check fmt
 
 all: check
 
@@ -15,6 +15,10 @@ codes:
 
 generate: vectors codes
 
+# The lints the README says a conforming release runs.
+conformance:
+	go run ./internal/conformance/cmd/conformance-lint
+
 test:
 	go test ./...
 
@@ -26,6 +30,7 @@ check:
 	gofmt -l . | tee /dev/stderr | (! read)
 	go vet ./...
 	go test ./...
+	go run ./internal/conformance/cmd/conformance-lint
 	@# Both generated artefacts must be what their generator produces. Drift means
 	@# someone changed a construction without regenerating, or regenerated without
 	@# reviewing.
