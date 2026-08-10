@@ -1,0 +1,83 @@
+{
+  "cases": [
+    {
+      "namespace": "9e4f2c1a-7b63-84d5-a011-36e8cf529d07",
+      "root_label": "vectors/root/a",
+      "root_pk_b64": "kv7yR4SE6DugOfdbwOb0eG4Lj0msdYGA5grm/DLJExg=",
+      "sha256_of_preimage_hex": "2dbd8fa79e276fc8444b76e7bde5d202c9325cdfddc634f6c409a985187dcec5",
+      "workspace_id": "2dbd8fa7-9e27-8fc8-844b-76e7bde5d202",
+      "version_nibble": 8,
+      "variant_bits": 2
+    },
+    {
+      "namespace": "9e4f2c1a-7b63-84d5-a011-36e8cf529d07",
+      "root_label": "vectors/root/b",
+      "root_pk_b64": "5PhrFjhccd+8VgAQadv+KRtp4VA35LZvSqS1i8tx6jE=",
+      "sha256_of_preimage_hex": "0ddfe630d82311e7e49cea07b18f5f11a532afd682152e6d320c0414c56120fb",
+      "workspace_id": "0ddfe630-d823-81e7-a49c-ea07b18f5f11",
+      "version_nibble": 8,
+      "variant_bits": 2
+    },
+    {
+      "namespace": "41d80b6f-9227-e350-18bc-74a93f66d12e",
+      "root_label": "vectors/root/a",
+      "root_pk_b64": "kv7yR4SE6DugOfdbwOb0eG4Lj0msdYGA5grm/DLJExg=",
+      "sha256_of_preimage_hex": "ff7787424e68a337a4e09fb76966fdd43823e695675f417ace84f0c01b2dc02e",
+      "workspace_id": "ff778742-4e68-8337-a4e0-9fb76966fdd4",
+      "version_nibble": 8,
+      "variant_bits": 2
+    },
+    {
+      "namespace": "41d80b6f-9227-e350-18bc-74a93f66d12e",
+      "root_label": "vectors/root/b",
+      "root_pk_b64": "5PhrFjhccd+8VgAQadv+KRtp4VA35LZvSqS1i8tx6jE=",
+      "sha256_of_preimage_hex": "90d6a3d4835f7adea909bd88ceb05e7053bd822bedc7f66eacc458e36316cba9",
+      "workspace_id": "90d6a3d4-835f-8ade-a909-bd88ceb05e70",
+      "version_nibble": 8,
+      "variant_bits": 2
+    },
+    {
+      "namespace": "08a35dc4-1fb0-7699-e24d-8a3155cb07f4",
+      "root_label": "vectors/root/a",
+      "root_pk_b64": "kv7yR4SE6DugOfdbwOb0eG4Lj0msdYGA5grm/DLJExg=",
+      "sha256_of_preimage_hex": "59641224972e2d70f00323637235fe9c75a346ce87e60bea7ceb315d0c40bcdd",
+      "workspace_id": "59641224-972e-8d70-b003-23637235fe9c",
+      "version_nibble": 8,
+      "variant_bits": 2
+    },
+    {
+      "namespace": "08a35dc4-1fb0-7699-e24d-8a3155cb07f4",
+      "root_label": "vectors/root/b",
+      "root_pk_b64": "5PhrFjhccd+8VgAQadv+KRtp4VA35LZvSqS1i8tx6jE=",
+      "sha256_of_preimage_hex": "6a815e90d93d6a7c38d2c4d153cf429540bc99442dd90109934e439e0035e047",
+      "workspace_id": "6a815e90-d93d-8a7c-b8d2-c4d153cf4295",
+      "version_nibble": 8,
+      "variant_bits": 2
+    },
+    {
+      "namespace": "b71269ae-30d4-8c2b-5f93-e017aa48c685",
+      "root_label": "vectors/root/a",
+      "root_pk_b64": "kv7yR4SE6DugOfdbwOb0eG4Lj0msdYGA5grm/DLJExg=",
+      "sha256_of_preimage_hex": "26399a8f56396c2d2d5b2a15bb398dfe8a790fd9d6b8d94ec0b7a4bc86a55cce",
+      "workspace_id": "26399a8f-5639-8c2d-ad5b-2a15bb398dfe",
+      "version_nibble": 8,
+      "variant_bits": 2
+    },
+    {
+      "namespace": "b71269ae-30d4-8c2b-5f93-e017aa48c685",
+      "root_label": "vectors/root/b",
+      "root_pk_b64": "5PhrFjhccd+8VgAQadv+KRtp4VA35LZvSqS1i8tx6jE=",
+      "sha256_of_preimage_hex": "aaf9b120a68a6b40b9d06d046bd0a888d038be7b1c54cc6a855ed5db1e082628",
+      "workspace_id": "aaf9b120-a68a-8b40-b9d0-6d046bd0a888",
+      "version_nibble": 8,
+      "variant_bits": 2
+    }
+  ],
+  "construction": "id = SHA-256(namespace 16B || root_pk 32B)[0..16]; octet 6 = 0x80 | (octet 6 \u0026 0x0F); octet 8 = 0x80 | (octet 8 \u0026 0x3F)",
+  "namespaces": [
+    "9e4f2c1a-7b63-84d5-a011-36e8cf529d07",
+    "41d80b6f-9227-e350-18bc-74a93f66d12e",
+    "08a35dc4-1fb0-7699-e24d-8a3155cb07f4",
+    "b71269ae-30d4-8c2b-5f93-e017aa48c685"
+  ]
+}

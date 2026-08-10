@@ -152,8 +152,10 @@ def test_a_device_registered_nowhere_here(server, founded, root):
     from roundelay.client import Device, Session
 
     _, ws = founded
-    stranger = Session(server, Device(secrets.token_hex(8)), root)
-    cert, sig = stranger.genesis_cert(secrets.token_bytes(16))
+    stranger = Session(server, Device(secrets.token_hex(8)), secrets.token_bytes(32))
+    from conftest import own
+
+    cert, sig = stranger.genesis_cert(own(stranger))
     assert stranger.register(cert, sig, admission="conformance-admission").status == 201
     assert stranger.log_in().status == 200
 

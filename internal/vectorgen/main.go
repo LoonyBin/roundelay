@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/loonybin/roundelay/internal/testprofile"
 	"github.com/loonybin/roundelay/internal/vectors"
 	"github.com/loonybin/roundelay/wire"
 )
@@ -51,6 +52,7 @@ func main() {
 		"envelope.json": buildEnvelopes(ns),
 		"keyplane.json": buildKeyplane(ns),
 		"auth.json":     buildAuth(ns),
+		"uuid8.json":    buildUUID8(),
 	}
 
 	for name, doc := range files {
@@ -628,5 +630,58 @@ func buildAuth(ns wire.Namespace) any {
 			"root_public_key_b64":  b64.EncodeToString(vectors.SignPub(vectors.LabelRoot)),
 			"cert_sig_b64":         b64.EncodeToString(csig),
 		},
+	}
+}
+
+// ── uuid8 ────────────────────────────────────────────────────────────────────
+
+// buildUUID8 pins the derived-Workspace construction.
+//
+// The two version bits and the two variant bits are the whole of what an
+// implementation gets wrong, and they are invisible in a hash: a value with the
+// wrong nibble in octet 6 is a plausible-looking UUID that no other peer
+// derives. So every case reports them separately as well as in the id.
+func buildUUID8() any {
+	type row struct {
+		Namespace string `json:"namespace"`
+		RootLabel string `json:"root_label"`
+		RootPKB64 string `json:"root_pk_b64"`
+		Digest    string `json:"sha256_of_preimage_hex"`
+		ID        string `json:"workspace_id"`
+		Version   int    `json:"version_nibble"`
+		Variant   int    `json:"variant_bits"`
+	}
+	rows := []row{}
+	for i, ns := range testprofile.DerivedNamespaces {
+		for _, label := range []string{"vectors/root/a", "vectors/root/b"} {
+			pub := vectors.SignPub(label)
+			var key [32]byte
+			copy(key[:], pub)
+			id := wire.UUID8(ns, key)
+
+			sum := sha256.Sum256(append(append([]byte{}, ns[:]...), key[:]...))
+			rows = append(rows, row{
+				Namespace: vectors.UUID(ns),
+				RootLabel: label,
+				RootPKB64: b64.EncodeToString(pub),
+				Digest:    hex.EncodeToString(sum[:]),
+				ID:        vectors.UUID(id),
+				Version:   int(id[6] >> 4),
+				Variant:   int(id[8] >> 6),
+			})
+			_ = i
+		}
+	}
+	return map[string]any{
+		"construction": "id = SHA-256(namespace 16B || root_pk 32B)[0..16]; " +
+			"octet 6 = 0x80 | (octet 6 & 0x0F); octet 8 = 0x80 | (octet 8 & 0x3F)",
+		"namespaces": func() []string {
+			out := []string{}
+			for _, ns := range testprofile.DerivedNamespaces {
+				out = append(out, vectors.UUID(ns))
+			}
+			return out
+		}(),
+		"cases": rows,
 	}
 }

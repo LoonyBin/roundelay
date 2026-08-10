@@ -31,6 +31,33 @@ from roundelay.client import Device, Server, Session  # noqa: E402
 REPO = pathlib.Path(__file__).resolve().parents[2]
 ADMISSION_TOKEN = "conformance-admission"
 
+# The reference profile's frozen namespaces, row 2. A client under a derived
+# creation policy computes its own Workspace ids offline, which is the whole of
+# what the row buys — so the suite computes them too rather than being told.
+DERIVED_NAMESPACES = [
+    bytes.fromhex("9e4f2c1a7b6384d5a01136e8cf529d07"),
+    bytes.fromhex("41d80b6f9227e35018bc74a93f66d12e"),
+    bytes.fromhex("08a35dc41fb07699e24d8a3155cb07f4"),
+    bytes.fromhex("b71269ae30d48c2b5f93e017aa48c685"),
+]
+
+
+def own(session, index: int = 0) -> bytes:
+    """The index-th Workspace this session's Root derives.
+
+    Under a derived policy a device does not pick an id; it computes one. So a
+    test that wants "some Workspace this device could found" asks for this
+    rather than inventing sixteen bytes.
+    """
+    return derived(session.root, index)
+
+
+def derived(root: bytes, index: int = 0) -> bytes:
+    """The index-th Workspace this Root may found."""
+    from roundelay import crypto
+
+    return crypto.uuid8(DERIVED_NAMESPACES[index], crypto.ed25519_public(root))
+
 
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
@@ -102,6 +129,34 @@ def _stop(proc: subprocess.Popen) -> None:
 
 
 @pytest.fixture(scope="session")
+def deployment():
+    """Start a server per distinct argument list, once, and reuse it.
+
+    Several checklist items are about what a *deployment* does — what it
+    admits, which classes it serves, what it bounds — and a deployment answers
+    those before its first request. So they need their own process rather than
+    their own Workspace, and this is how one is asked for.
+    """
+    running: dict[tuple[str, ...], str] = {}
+    procs: list[subprocess.Popen] = []
+    binary: list[pathlib.Path] = []
+
+    def make(*args: str) -> str:
+        if args in running:
+            return running[args]
+        if not binary:
+            binary.append(_build())
+        url, proc = _start(binary[0], *args)
+        procs.append(proc)
+        running[args] = url
+        return url
+
+    yield make
+    for proc in procs:
+        _stop(proc)
+
+
+@pytest.fixture(scope="session")
 def base_url() -> str:
     """The server under test.
 
@@ -125,13 +180,15 @@ def server(base_url: str) -> Server:
 
 
 @pytest.fixture
-def workspace() -> bytes:
-    """A Workspace nothing has touched.
+def workspace(root: bytes) -> bytes:
+    """A Workspace nothing has touched, that this test's Root may found.
 
-    Ids are the caller's to choose under `derived`, and a suite that reused one
-    would be testing whatever the previous case left behind.
+    Under `derived` an id is not the caller's to choose: it is arithmetic over
+    the founding key, and a server that admitted any id would have the policy in
+    name only. Namespace 1 is used here so that a test may hold both this and a
+    founder's own Workspace, which is namespace 0.
     """
-    return secrets.token_bytes(16)
+    return derived(root, 1)
 
 
 @pytest.fixture
@@ -150,7 +207,7 @@ def founder(server: Server, root: bytes) -> Session:
     device = Device(secrets.token_hex(8))
     session = Session(server, device, root)
     # The certificate a founding registration carries is its own genesis's.
-    ws = secrets.token_bytes(16)
+    ws = derived(root, 0)
     session.founding_workspace = ws  # type: ignore[attr-defined]
     cert, sig = session.genesis_cert(ws)
     got = session.register(cert, sig, admission=ADMISSION_TOKEN)
@@ -235,18 +292,14 @@ OPAQUE_CLASS = 0x40
 
 
 @pytest.fixture(scope="session")
-def ext_base_url() -> str:
+def ext_base_url(deployment) -> str:
     if url := os.environ.get("ROUNDELAY_EXT_BASE_URL"):
-        yield url.rstrip("/")
-        return
-    url, proc = _start(
-        _build(),
+        return url.rstrip("/")
+    return deployment(
         "-admission", f"token:{ADMISSION_TOKEN}",
         "-opaque-classes", f"{OPAQUE_CLASS:02x}",
         "-extension-classes", f"{EXT_CLASS:02x}={EXT_NAME}",
     )
-    yield url
-    _stop(proc)
 
 
 @pytest.fixture
@@ -262,7 +315,7 @@ def ext_founded(ext_server: Server, root: bytes) -> tuple[Session, bytes]:
     with owner widened to author them."""
     device = Device(secrets.token_hex(8))
     session = Session(ext_server, device, root)
-    ws = secrets.token_bytes(16)
+    ws = derived(root, 0)
     session.founding_workspace = ws  # type: ignore[attr-defined]
     cert, sig = session.genesis_cert(ws)
     assert session.register(cert, sig, admission=ADMISSION_TOKEN).status == 201
@@ -283,6 +336,47 @@ def ext_founded(ext_server: Server, root: bytes) -> tuple[Session, bytes]:
          "prune_types": ["prune", "prune_ext", "hard_prune"]},
         {"role": "participant", "classes": [0x01], "prune_types": []},
     ]))
+    assert got.status == 200, got.body
+    session.resync()
+    return session, ws
+
+
+# ── deployments that bound what a Workspace consumes ────────────────────────
+
+
+@pytest.fixture
+def quota_server(deployment) -> Server:
+    """Every non-exempt write refused. Zero is the honest bound to test with:
+    a deployment at its ceiling is the state the rules are about, and a
+    Workspace can still be founded because founding is all 0x80."""
+    s = Server(deployment(
+        "-admission", f"token:{ADMISSION_TOKEN}", "-quota-ops-per-workspace", "0"))
+    yield s
+    s.close()
+
+
+@pytest.fixture
+def member_quota_server(deployment) -> Server:
+    """One non-exempt op per member, and no Workspace bound at all — so the
+    two codes can be told apart by which one comes back."""
+    s = Server(deployment(
+        "-admission", f"token:{ADMISSION_TOKEN}", "-quota-ops-per-member", "1"))
+    yield s
+    s.close()
+
+
+def found(server: Server, root: bytes) -> tuple[Session, bytes]:
+    """Register, log in, genesis and self-grant, on any deployment."""
+    device = Device(secrets.token_hex(8))
+    session = Session(server, device, root)
+    ws = derived(root, 0)
+    session.founding_workspace = ws  # type: ignore[attr-defined]
+    cert, sig = session.genesis_cert(ws)
+    assert session.register(cert, sig, admission=ADMISSION_TOKEN).status == 201
+    assert session.log_in().status == 200
+    got = session.post_ops(
+        ws, session.genesis(ws),
+        session.grant(ws, device, "owner", fixtures.uuid(secrets.token_bytes(16))))
     assert got.status == 200, got.body
     session.resync()
     return session, ws

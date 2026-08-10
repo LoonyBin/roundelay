@@ -20,13 +20,16 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/loonybin/roundelay/authority"
+	"github.com/loonybin/roundelay/codes"
 	"github.com/loonybin/roundelay/httpapi"
 	"github.com/loonybin/roundelay/identity"
 	"github.com/loonybin/roundelay/internal/memstore"
+	"github.com/loonybin/roundelay/internal/testprofile"
 	"github.com/loonybin/roundelay/keyplane"
 	"github.com/loonybin/roundelay/oplog"
 	"github.com/loonybin/roundelay/pgstore"
@@ -45,9 +48,14 @@ func main() {
 	// what changes when it does — so they are knobs rather than constants.
 	opaque := flag.String("opaque-classes", "", "comma-separated hex classes in 40-7f, e.g. 40,41")
 	extensions := flag.String("extension-classes", "", "comma-separated <hex>=<name>, e.g. cc=purge")
+	// Consumption. The core defines no unit; this deployment counts stored ops,
+	// which is a measure and not the measure — any other would conform too.
+	wsQuota := flag.Int("quota-ops-per-workspace", -1, "refuse a non-exempt write once the Workspace holds this many ops; -1 for no bound")
+	memberQuota := flag.Int("quota-ops-per-member", -1, "the same, per member; -1 for no bound")
 	flag.Parse()
 
-	if err := run(*addr, *dsn, *version, *admission, *opaque, *extensions); err != nil {
+	if err := run(*addr, *dsn, *version, *admission, *opaque, *extensions,
+		*wsQuota, *memberQuota); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -63,11 +71,10 @@ func referenceProfile(version string, admission profile.Admission,
 		Name:              "acme/p1",
 		Namespace:         "acme",
 		Creation:          profile.CreationDerived,
-		DerivedNamespaces: []string{"main"},
-		// Under `derived` the predicate is arithmetic the profile owns. This
-		// reference admits any id, which a deployment that provisions per
-		// Workspace must not do — see row 2's note.
-		Creatable: func([32]byte, [16]byte) bool { return true },
+		DerivedNamespaces: testprofile.DerivedNamespaces,
+		// No predicate under `derived`: the answer is uuid8(NS, root_pk), which
+		// the core computes. A deployment that provisions per Workspace cannot
+		// use this row at all — see row 2's note.
 		Admission: admission,
 		InitialRoleTable: profile.RoleTable{
 			"owner":       {Classes: []byte{0x01, 0x02, 0x80, 0x81, 0xBF}},
@@ -132,7 +139,92 @@ func parseExtensions(spec string) (map[byte]string, error) {
 	return out, nil
 }
 
-func run(addr, dsn, version, admissionSpec, opaqueSpec, extensionSpec string) error {
+// countingQuota is the reference measure: non-exempt ops this process has
+// admitted, per Workspace and per member.
+//
+// It is *a* measure and not *the* measure. A deployment would count bytes
+// currently held, or bytes written per month, or bytes excluding everything
+// already reprised — all conformant, and a client cannot tell which one refused
+// it. That is why the core defines none of it, and why nothing about this
+// counter reaches the store interface: what an operator charges for is not the
+// log's business.
+//
+// It counts in memory and starts again on restart, which a real one would not.
+// Nothing observable depends on that: the verdict is what the suite reads.
+type countingQuota struct {
+	perWorkspace int
+	perMember    int
+
+	mu        sync.Mutex
+	workspace map[[16]byte]int
+	member    map[[32]byte]int
+}
+
+func newCountingQuota(perWorkspace, perMember int) *countingQuota {
+	return &countingQuota{
+		perWorkspace: perWorkspace, perMember: perMember,
+		workspace: map[[16]byte]int{}, member: map[[32]byte]int{},
+	}
+}
+
+// memberKey scopes a member's count to the Workspace it wrote in: the same
+// device in two Workspaces is two accounts, because a Workspace is the only
+// thing this protocol counts.
+func memberKey(workspace, author [16]byte) [32]byte {
+	var k [32]byte
+	copy(k[:16], workspace[:])
+	copy(k[16:], author[:])
+	return k
+}
+
+func (q *countingQuota) Check(_ context.Context, workspace, author [16]byte, ops []oplog.Op) *oplog.Refusal {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	if q.perWorkspace >= 0 && q.workspace[workspace] >= q.perWorkspace {
+		// No index: every op in a batch shares one Workspace, so there is no op
+		// for the refusal to name. And nothing else — no amount, no allowance,
+		// no plan, no price, no URL. A deployment's commercial surface is not
+		// protocol, and a code that carried one would be a code every client had
+		// to parse differently per server.
+		return &oplog.Refusal{Status: http.StatusPaymentRequired, Code: codes.WorkspaceQuotaExhausted}
+	}
+
+	key := memberKey(workspace, author)
+	held := q.member[key]
+	charged := 0
+	for i, op := range ops {
+		if exemptClass(op.Header().OpClass) {
+			continue
+		}
+		if q.perMember >= 0 && held+charged >= q.perMember {
+			// index names the first op at which the bound was crossed, which is
+			// the only index that is a fact about the batch rather than about
+			// the accounting: it is where counting stopped.
+			return &oplog.Refusal{
+				Status: http.StatusPaymentRequired, Code: codes.MemberQuotaExhausted,
+				Fields: map[string]any{"index": i},
+			}
+		}
+		charged++
+	}
+
+	// Admitted, so charge for it. The batch may still be refused below on its
+	// own merits, which would overcount — a real measure reads what is stored
+	// rather than what was let past, and this one is a reference.
+	q.workspace[workspace] += charged
+	q.member[key] += charged
+	return nil
+}
+
+// exemptClass mirrors the core's own exemption, so the count never charges for
+// an op the core will never refuse.
+func exemptClass(class byte) bool {
+	return class == wire.ClassControl || class == wire.ClassPrune
+}
+
+func run(addr, dsn, version, admissionSpec, opaqueSpec, extensionSpec string,
+	wsQuota, memberQuota int) error {
 	placement := profile.AdmissionOpen
 	var admitter identity.Admitter = identity.AdmitAll{}
 	switch {
@@ -213,6 +305,10 @@ func run(addr, dsn, version, admissionSpec, opaqueSpec, extensionSpec string) er
 	pipeline := &oplog.Pipeline{
 		Profile: prof, Store: logStore, Authority: auth,
 		Notify: func(ws [16]byte) { broker.Notify(ws) },
+	}
+	if wsQuota >= 0 || memberQuota >= 0 {
+		pipeline.Quota = newCountingQuota(wsQuota, memberQuota)
+		log.Printf("quota: %d ops per workspace, %d per member", wsQuota, memberQuota)
 	}
 
 	lookup := workspaceLookup{store: logStore}

@@ -1097,7 +1097,7 @@ items:
   subject: server
   observable: black-box
   codes: [workspace_not_reachable, bad_root_signature, cert_workspace_mismatch, cert_member_mismatch, cert_key_mismatch]
-  test: tests/conformance/test_control.py::test_genesis_cert_ordering
+  test: tests/conformance/test_authority.py::test_the_genesis_op_is_judged_for_reachability_too
 
 - id: CONF-CTL-006
   requirement: An author's first op that is not its registering control op is refused member_register_not_first.
@@ -2068,7 +2068,7 @@ items:
   subject: server
   observable: black-box
   codes: [workspace_quota_exhausted]
-  test: tests/conformance/test_quota.py::test_quota_refusal_shape
+  test: tests/conformance/test_quota.py::test_the_refusal_says_nothing_but_the_code
 
 - id: CONF-QUOTA-002
   requirement: >
@@ -2079,7 +2079,7 @@ items:
   subject: server
   observable: black-box
   codes: [workspace_quota_exhausted]
-  test: tests/conformance/test_quota.py::test_exit_path_never_gated
+  test: tests/conformance/test_quota.py::test_the_four_routes_it_may_never_gate
 
 - id: CONF-QUOTA-003
   requirement: >
@@ -2089,7 +2089,7 @@ items:
   subject: server
   observable: black-box
   codes: [workspace_quota_exhausted]
-  test: tests/conformance/test_quota.py::test_control_and_prune_exempt
+  test: tests/conformance/test_quota.py::test_a_prune_batch_lands_under_a_closed_ceiling
 
 - id: CONF-QUOTA-004
   requirement: >
@@ -2099,7 +2099,7 @@ items:
   subject: server
   observable: black-box
   codes: [workspace_quota_exhausted]
-  test: tests/conformance/test_quota.py::test_mixed_batch_still_refused
+  test: tests/conformance/test_quota.py::test_the_exemption_does_not_survive_batching
 
 - id: CONF-QUOTA-005
   requirement: >
@@ -2109,7 +2109,7 @@ items:
   subject: server
   observable: black-box
   codes: [member_quota_exhausted]
-  test: tests/conformance/test_quota.py::test_per_member_bound_is_distinct
+  test: tests/conformance/test_quota.py::test_a_member_bound_is_a_different_code
 
 - id: CONF-QUOTA-006
   requirement: >
@@ -2121,7 +2121,7 @@ items:
   subject: server
   observable: black-box
   codes: [workspace_quota_exhausted]
-  test: tests/conformance/test_quota.py::test_prune_ext_is_exempt
+  test: tests/conformance/test_quota.py::test_the_two_exempt_classes
 
 # ── Profile ──────────────────────────────────────────────────────────────────
 
@@ -2141,7 +2141,7 @@ items:
   subject: profile
   observable: black-box
   codes: []
-  test: tests/conformance/test_profile.py::test_namespace_constraints
+  test: tests/conformance/test_profile.py::test_the_namespace_is_reported_unchanged
 
 - id: CONF-PROF-003
   requirement: >
@@ -2157,7 +2157,7 @@ items:
   subject: profile
   observable: black-box
   codes: [workspace_not_reachable]
-  test: tests/conformance/test_profile.py::test_derived_ids
+  test: tests/conformance/test_profile.py::test_an_id_derived_any_other_way_is_not_reachable
 
 - id: CONF-PROF-004
   requirement: The role table contains exactly one role named owner.
@@ -2176,7 +2176,7 @@ items:
   subject: profile
   observable: white-box
   codes: []
-  test: tests/conformance/test_profile.py::test_holder_ref_derivation_declared
+  test: tests/conformance/test_profile.py::test_holder_ref_groups_a_holders_devices
 
 - id: CONF-PROF-006
   requirement: >

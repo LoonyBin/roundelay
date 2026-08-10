@@ -257,3 +257,52 @@ func TestObservabilityRefusesABlackBoxItemDecidedInGo(t *testing.T) {
 		t.Fatalf("white-box in Go is the normal case: %v", r.Problems)
 	}
 }
+
+// A Go node id is repository-relative already and must not be given the suite's
+// prefix; a pytest one must.
+func TestBindingsNormalisesEachCollectorsSpelling(t *testing.T) {
+	list := bindingList()
+	list.Items[1].Test = "profile/profile_test.go::TestTwo"
+	r := list.Bindings(&conformance.Bindings{Items: map[string][]string{
+		"CONF-A-001": {"test_a.py::test_one"},
+		"CONF-A-002": {"profile/profile_test.go::TestTwo"},
+	}})
+	if !r.OK() {
+		t.Fatalf("both spellings should agree: %v", r.Problems)
+	}
+}
+
+func TestGoBindingsReadsDocComments(t *testing.T) {
+	dir := t.TempDir()
+	src := `package x
+
+import "testing"
+
+// conformance: CONF-PROF-004
+//
+// Prose after the claim, which is the normal shape.
+func TestOwnerIsSingular(t *testing.T) {}
+
+// No claim here.
+func TestSomethingElse(t *testing.T) {}
+
+// conformance: CONF-PROF-001 CONF-PROF-006
+func TestTwoAtOnce(t *testing.T) {}
+`
+	if err := os.WriteFile(filepath.Join(dir, "x_test.go"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := conformance.GoBindings(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Items) != 3 {
+		t.Fatalf("expected three claims, got %v", got.Items)
+	}
+	if got.Items["CONF-PROF-004"][0] != "x_test.go::TestOwnerIsSingular" {
+		t.Errorf("node id: %v", got.Items["CONF-PROF-004"])
+	}
+	if len(got.Items["CONF-PROF-001"]) != 1 || len(got.Items["CONF-PROF-006"]) != 1 {
+		t.Errorf("a doc comment may claim more than one item: %v", got.Items)
+	}
+}

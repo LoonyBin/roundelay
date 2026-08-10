@@ -21,6 +21,12 @@ func TestMinimalProfileValidates(t *testing.T) {
 
 // There are no defaults. Every row unanswered is a refusal to start, because a
 // silent default here is either a security hole or a convergence bug.
+// conformance: CONF-PROF-001
+//
+// A server refuses to start with any obligation unset. There are no defaults
+// for the eleven rows — a default is a decision made by whoever wrote the
+// library rather than by the deployment answering for it — so an unset row is
+// a build that must not serve.
 func TestEveryRowMustBeAnswered(t *testing.T) {
 	for _, c := range []struct {
 		row    string
@@ -69,6 +75,11 @@ func TestNoneIsAnAnswer(t *testing.T) {
 }
 
 // Row 4 must carry exactly one owner.
+// conformance: CONF-PROF-004
+//
+// Exactly one role named owner. It is the role the core itself names — an
+// owner grant requires root, and only owner may author 0x80 — so a table
+// without one describes a Workspace nobody can administer.
 func TestRoleTableOwnerCount(t *testing.T) {
 	p := testprofile.Minimal()
 	delete(p.InitialRoleTable, "owner")
@@ -241,5 +252,44 @@ func TestServedSetsAreSorted(t *testing.T) {
 	}
 	if len(wire.PruneTypes) != 3 {
 		t.Errorf("v1 defines %d prune types, want 3", len(wire.PruneTypes))
+	}
+}
+
+// conformance: CONF-PROF-006
+//
+// Every role token in an initial table is the protocol's one token shape, which
+// is the shape a role_table certificate is held to. A profile that started with
+// a role no certificate could name would have a table with no in-band
+// replacement: the only way to change it would be to redeploy.
+func TestInitialRoleTokensAreReplaceable(t *testing.T) {
+	shape := regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
+	for role := range testprofile.Minimal().InitialRoleTable {
+		if !shape.MatchString(role) {
+			t.Errorf("role %q is not a token a role_table could carry", role)
+		}
+		if n := len(role); n < 1 || n > 32 {
+			t.Errorf("role %q is %d bytes, outside 1-32", role, n)
+		}
+	}
+
+	for _, bad := range []string{"Owner", "-owner", "owner-", "", strings.Repeat("o", 33)} {
+		p := testprofile.Minimal()
+		p.InitialRoleTable[bad] = p.InitialRoleTable["owner"]
+		if err := p.Validate(); err == nil {
+			t.Errorf("a table naming %q started", bad)
+		}
+	}
+}
+
+// conformance: CONF-PROF-001
+//
+// Row 2 answered two ways at once is a profile that does not say what it does:
+// under `derived` the answer is arithmetic the core computes, and a predicate
+// beside it would mean whichever the core happened to consult decides.
+func TestDerivedTakesNoPredicate(t *testing.T) {
+	p := testprofile.Minimal()
+	p.Creatable = func([32]byte, [16]byte) bool { return true }
+	if err := p.Validate(); err == nil || !strings.Contains(err.Error(), "row 2") {
+		t.Errorf("derived with a predicate started: %v", err)
 	}
 }

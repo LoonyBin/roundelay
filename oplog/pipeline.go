@@ -45,6 +45,11 @@ type Pipeline struct {
 	Store     Store
 	Authority Authority
 
+	// Quota bounds what a Workspace consumes. A deployment that bounds nothing
+	// leaves it nil, which is the core's own position: it defines no unit and
+	// no accounting rule, only the two verdicts and where they may not be given.
+	Quota Quota
+
 	// Notify is poked after a successful commit in which at least one op was
 	// new.
 	//
@@ -114,6 +119,19 @@ func (p *Pipeline) walk(ctx context.Context, tx Tx, workspace, device [16]byte, 
 			return nil, r
 		}
 		ops[i] = op
+	}
+
+	// ── Consumption ─────────────────────────────────────────────────────────
+	//
+	// After stage 1, because the exemption is a fact about every header in the
+	// batch and stage 1 is the pass that reads them; before anything is judged
+	// or stored, because a refused batch commits nothing. Where it runs is not
+	// protocol — the verdict is, and so is the fact that this is the only place
+	// it is asked, which is what makes the four never-gated routes never gated.
+	if p.Quota != nil && !batchIsExempt(ops) {
+		if r := p.Quota.Check(ctx, workspace, device, ops); r != nil {
+			return nil, r
+		}
 	}
 
 	// ── Stage 0's other half, deferred ──────────────────────────────────────

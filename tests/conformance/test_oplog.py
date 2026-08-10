@@ -181,7 +181,9 @@ def test_pre_genesis(founder):
     The asymmetry is how a device discovers it needs to create one, while
     holding a token and no permissions at all.
     """
-    ws = secrets.token_bytes(16)
+    from conftest import own
+
+    ws = own(founder, 2)
     page = ops_of(founder, ws)
     assert page == {"ops": [], "has_more": False}
 
@@ -375,8 +377,11 @@ def _stranger(session, ws):
 
     dev = Device(_s.token_hex(8))
     other = Session(session.s, dev, _s.token_bytes(32))
-    cert, sig = other.genesis_cert(_s.token_bytes(16))
-    from conftest import ADMISSION_TOKEN
+    from conftest import ADMISSION_TOKEN, own
+
+    # A Root of its own, so the Workspace it founds is one it derives — and one
+    # nobody else reaches for.
+    cert, sig = other.genesis_cert(own(other))
 
     assert other.register(cert, sig, admission=ADMISSION_TOKEN).status == 201
     assert other.log_in().status == 200

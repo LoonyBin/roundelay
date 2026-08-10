@@ -225,7 +225,12 @@ func (r *Registrar) store(ctx context.Context, req *Registration) (*Result, *opl
 	return &Result{Device: want, Created: created, Chained: chained}, nil
 }
 
+// creatable is the same question the append path asks, and must give the same
+// answer: one certificate, one verdict, whichever door.
 func (r *Registrar) creatable(rootPK [32]byte, workspace [16]byte) bool {
+	if r.Profile.Creation == profile.CreationDerived {
+		return r.Profile.Derives(rootPK, workspace)
+	}
 	if r.Profile.Creatable != nil {
 		return r.Profile.Creatable(rootPK, workspace)
 	}

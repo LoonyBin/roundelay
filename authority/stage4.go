@@ -6,6 +6,7 @@ import (
 
 	"github.com/loonybin/roundelay/codes"
 	"github.com/loonybin/roundelay/oplog"
+	"github.com/loonybin/roundelay/profile"
 	"github.com/loonybin/roundelay/wire"
 )
 
@@ -288,11 +289,16 @@ func (a *Authority) genesis(tx oplog.Tx, p *ControlPayload, op oplog.Op, at int6
 func (r Registration) RegisteredAtSeqIsNotOne(authorSeq uint64) bool { return authorSeq != 1 }
 
 func (a *Authority) creatable(rootPK [32]byte, workspace [16]byte) bool {
+	if a.Profile.Creation == profile.CreationDerived {
+		// The arithmetic is the core's: uuid8 is a [W] construction, and a
+		// deployment that declared `derived` and got "anything is creatable"
+		// would have a policy in name only — workspace_not_reachable could
+		// never fire, and a Root could found ids it does not derive.
+		return a.Profile.Derives(rootPK, workspace)
+	}
 	if a.Profile.Creatable != nil {
 		return a.Profile.Creatable(rootPK, workspace)
 	}
-	// Under `derived` with no predicate supplied the answer is the profile's
-	// arithmetic, which this core does not compute for it.
 	return true
 }
 

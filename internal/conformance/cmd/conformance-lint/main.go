@@ -30,6 +30,13 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// Two collectors, one record. The black-box suite writes its file as it
+	// collects; the white-box claims are comments in Go tests, read here.
+	goBindings, err := conformance.GoBindings(".")
+	if err != nil {
+		log.Fatal(err)
+	}
+	bindings.Merge(goBindings)
 	vocab := conformance.Vocabulary()
 
 	fmt.Printf("%s: %d items, %d codes\n", path, len(list.Items), len(vocab))

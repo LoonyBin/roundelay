@@ -17,7 +17,7 @@ import secrets
 
 import pytest
 
-from conftest import ADMISSION_TOKEN
+from conftest import ADMISSION_TOKEN, derived
 from roundelay import crypto, fixtures
 from roundelay.client import Device, Session
 
@@ -40,7 +40,7 @@ def test_a_founding_registration_the_server_declines(server, root):
     """403, and no member record — so a device that was refused can be
     admitted later without colliding with a half-made record of itself."""
     device = shell(server, root)
-    ws = secrets.token_bytes(16)
+    ws = derived(root)
     cert, sig = device.genesis_cert(ws)
 
     got = device.register(cert, sig)
@@ -116,7 +116,7 @@ def test_the_joining_branch_is_checked_not_assumed(server, founded, root):
     founder, ws = founded
 
     absent = shell(server, root)
-    cert, sig = absent.register_cert(secrets.token_bytes(16))
+    cert, sig = absent.register_cert(derived(root, 2))
     got = absent.register(cert, sig)
     assert got.status == 409, got.body
     assert got.code == "workspace_not_created"
@@ -189,7 +189,7 @@ def test_the_gate_is_consulted_at_founding_and_nowhere_else(server, founded, enr
     # A second Workspace, founded by a device already holding a token: the
     # genesis op carries no admission check at all, because the admitted act
     # was the registration that minted that token.
-    second = secrets.token_bytes(16)
+    second = derived(founder.root, 1)
     founder.resync()
     got = founder.post_ops(second, founder.genesis(second))
     assert got.status == 200, got.body
@@ -200,7 +200,7 @@ def test_a_vault_write_by_a_root_that_founded_nothing(server, root):
     """A precondition rather than a second gate: it removes a state that never
     meant anything, a vault holding an identity that owns nothing."""
     device = shell(server, root)
-    ws = secrets.token_bytes(16)
+    ws = derived(root)
     cert, sig = device.genesis_cert(ws)
     assert device.register(cert, sig, admission=ADMISSION_TOKEN).status == 201
     assert device.log_in().status == 200

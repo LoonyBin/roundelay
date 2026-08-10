@@ -242,3 +242,22 @@ def keywrap_digest(
         rest += member_id + kid + hashlib.sha256(wrap).digest()
     rest += hashlib.sha256(escrow).digest()
     return hashlib.sha256(framed(f"{namespace}/keywrap-digest/v1", rest)).digest()
+
+
+def uuid8(namespace: bytes, root_pk: bytes) -> bytes:
+    """A derived Workspace id: uuid8(NS, root_pk).
+
+        d  = SHA-256( namespace 16B || root_pk 32B )
+        id = d[0..16], octet 6 <- 0x80 | (octet 6 & 0x0F)
+                       octet 8 <- 0x80 | (octet 8 & 0x3F)
+
+    The name is the 32 raw bytes of the key, never a spelling of them: a textual
+    identifier has spellings and two peers that spell it differently derive
+    different Workspaces and never converge.
+    """
+    if len(namespace) != 16 or len(root_pk) != 32:
+        raise ValueError("uuid8 takes a 16-byte namespace and a 32-byte key")
+    d = bytearray(hashlib.sha256(namespace + root_pk).digest()[:16])
+    d[6] = 0x80 | (d[6] & 0x0F)
+    d[8] = 0x80 | (d[8] & 0x3F)
+    return bytes(d)

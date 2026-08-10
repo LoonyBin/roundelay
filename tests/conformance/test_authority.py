@@ -13,6 +13,7 @@ import secrets
 
 import pytest
 
+from conftest import own
 from roundelay import crypto, fixtures, wire
 
 pytestmark = pytest.mark.usefixtures("server")
@@ -31,7 +32,7 @@ def test_unregistered_device_is_refused(server, founded, root, gid):
     ws = founded[1]
     # It founds a Workspace of its own, so it holds a real token and a real
     # registration — somewhere else.
-    cert, sig = stranger.genesis_cert(secrets.token_bytes(16))
+    cert, sig = stranger.genesis_cert(own(stranger))
     assert stranger.register(cert, sig, admission="conformance-admission").status == 201
     assert stranger.log_in().status == 200
 
@@ -53,8 +54,10 @@ def test_the_gate_is_per_workspace(server, founder, enrol, gid):
     ).status == 200
     founder.resync()
 
-    # A second Workspace under the same Root, founded by a second device.
-    second = secrets.token_bytes(16)
+    # A second Workspace under the same Root, founded by a second device. One
+    # Root derives one id per frozen namespace, so this is namespace 1.
+    from conftest import derived, own
+    second = derived(founder.root, 1)
     other = Session(server, Device(secrets.token_hex(8)), founder.root)
     other.founding_workspace = second
     cert, sig = other.genesis_cert(second)
@@ -722,3 +725,41 @@ def test_amend_refusal_order(founded, gid):
     got = founder.post_ops(ws, envelope)
     assert got.status == 200, got.body
     assert got.body["results"][0]["duplicate"] is True
+
+
+@pytest.mark.item("CONF-CTL-005")
+def test_the_genesis_op_is_judged_for_reachability_too(server, root):
+    """Both doors ask, and the append path's answer is the one that matters.
+
+    A device registers with a genesis certificate for an id its Root derives,
+    which is what mints its token — and then posts a genesis *op* naming a
+    different id. The route never saw that one. If the append path took the id
+    on trust, a derived policy would be enforced only against clients that
+    volunteered the right answer at registration.
+    """
+    from roundelay.client import Device, Session
+
+    device = Session(server, Device(secrets.token_hex(8)), root)
+    cert, sig = device.genesis_cert(own(device))
+    assert device.register(cert, sig, admission="conformance-admission").status == 201
+    assert device.log_in().status == 200
+
+    stray = secrets.token_bytes(16)
+    got = device.post_ops(stray, device.genesis(stray))
+    assert got.status == 403, got.body
+    assert got.code == "workspace_not_reachable"
+    assert got.detail["index"] == 0
+
+    # Reachability sits above the signature, so an op wrong in both ways
+    # answers on the id. And a genesis raises no cert_root_pk_mismatch at all:
+    # it carries exactly one root_pk, its own.
+    device.resync()
+    got = device.post_ops(stray, device.genesis(stray, signer=secrets.token_bytes(32)))
+    assert got.status == 403, got.body
+    assert got.code == "workspace_not_reachable"
+
+    # The id it does derive is accepted, so the refusals above are the
+    # predicate answering rather than something else in the way.
+    device.resync()
+    ws = own(device)
+    assert device.post_ops(ws, device.genesis(ws)).status == 200

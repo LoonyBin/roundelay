@@ -86,6 +86,9 @@
     "CONF-CTL-004": [
       "test_authority.py::test_a_genesis_is_once_and_first"
     ],
+    "CONF-CTL-005": [
+      "test_authority.py::test_the_genesis_op_is_judged_for_reachability_too"
+    ],
     "CONF-CTL-006": [
       "test_authority.py::test_an_authors_first_op_must_be_its_registration"
     ],
@@ -411,6 +414,17 @@
     "CONF-MEM-010": [
       "test_identity.py::test_key_ids_is_all_or_nothing"
     ],
+    "CONF-PROF-002": [
+      "test_profile.py::test_the_namespace_is_reported_unchanged"
+    ],
+    "CONF-PROF-003": [
+      "test_profile.py::test_the_derivation_matches_the_corpus",
+      "test_profile.py::test_an_id_derived_any_other_way_is_not_reachable",
+      "test_profile.py::test_the_answer_survives_a_restart"
+    ],
+    "CONF-PROF-005": [
+      "test_profile.py::test_holder_ref_groups_a_holders_devices"
+    ],
     "CONF-PRUNE-001": [
       "test_prune.py::test_prune_shape_rules"
     ],
@@ -436,6 +450,26 @@
     ],
     "CONF-PRUNE-013": [
       "test_prune.py::test_a_prune_is_the_target_of_nothing"
+    ],
+    "CONF-QUOTA-001": [
+      "test_quota.py::test_the_refusal_says_nothing_but_the_code"
+    ],
+    "CONF-QUOTA-002": [
+      "test_quota.py::test_the_four_routes_it_may_never_gate"
+    ],
+    "CONF-QUOTA-003": [
+      "test_quota.py::test_the_two_exempt_classes",
+      "test_quota.py::test_a_prune_batch_lands_under_a_closed_ceiling"
+    ],
+    "CONF-QUOTA-004": [
+      "test_quota.py::test_the_exemption_does_not_survive_batching"
+    ],
+    "CONF-QUOTA-005": [
+      "test_quota.py::test_a_member_bound_is_a_different_code",
+      "test_quota.py::test_the_index_names_the_first_crossing"
+    ],
+    "CONF-QUOTA-006": [
+      "test_quota.py::test_the_two_exempt_classes"
     ],
     "CONF-REVK-002": [
       "test_authority.py::test_revocation_leaves_the_registration"

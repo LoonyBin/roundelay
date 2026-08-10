@@ -131,11 +131,16 @@ class Device:
         self.author_seq[workspace] = self.author_seq.get(workspace, 0) + 1
         return self.author_seq[workspace]
 
+    # The profile's holder_ref derivation: the holder's Root public key,
+    # verbatim. Set by whoever builds the registration, because it is the
+    # holder that is being named and not the device.
+    holder_ref: bytes = bytes(32)
+
     def registration_block(self, workspace: bytes | None = None) -> dict[str, Any]:
         block = {
             "member_id": fixtures.uuid(self.member_id),
             "member_kind": "device",
-            "holder_ref": b64(bytes(32)),
+            "holder_ref": b64(self.holder_ref),
             "control_pk": b64(self.control_pk),
             "control_key_id": b64(crypto.key_id(self.control_pk)),
             "content_pk": b64(self.content_pk),
@@ -156,6 +161,9 @@ class Session:
         self.s = server
         self.d = device
         self.root = root_seed
+        # The deployment's own client derives holder_ref as the profile says,
+        # which is what makes grouping a holder's devices possible at all.
+        self.d.holder_ref = crypto.ed25519_public(root_seed)
         self.pending_tip: str | None = None
 
     # ── identity ────────────────────────────────────────────────────────────
@@ -287,7 +295,7 @@ class Session:
     def resync(self) -> None:
         self.pending_tip = None
 
-    def genesis(self, workspace: bytes) -> str:
+    def genesis(self, workspace: bytes, *, signer: bytes | None = None) -> str:
         cert = json.dumps(
             {
                 "workspace_id": fixtures.uuid(workspace),
@@ -297,7 +305,8 @@ class Session:
             },
             separators=(",", ":"),
         ).encode()
-        sig = crypto.sign(self.root, wire.cert_input(self.s.namespace, "workspace-genesis", cert))
+        sig = crypto.sign(signer if signer is not None else self.root,
+                           wire.cert_input(self.s.namespace, "workspace-genesis", cert))
         return self.control(
             workspace,
             {

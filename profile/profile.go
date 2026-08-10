@@ -163,10 +163,15 @@ type Profile struct {
 	Creation Creation
 	// DerivedNamespaces is row 2's ordered frozen namespaces under
 	// CreationDerived, and unused otherwise.
-	DerivedNamespaces []string
+	//
+	// Frozen literals, never recomputed at startup: recomputing them would make
+	// Workspace identity depend on two languages' UUID libraries agreeing, and
+	// a Workspace id is signed into every header the Workspace will ever carry.
+	// So they are sixteen bytes here rather than a name to be hashed.
+	DerivedNamespaces [][16]byte
 	// Creatable is row 2's predicate under CreationExplicit or
-	// CreationPredicate, and unused under CreationDerived, where the answer is
-	// arithmetic.
+	// CreationPredicate. Under CreationDerived it is unused and MUST be nil:
+	// the answer there is arithmetic, and Derives computes it.
 	Creatable Creatable
 	// Row 3.
 	Admission Admission
@@ -232,6 +237,11 @@ func (p *Profile) Validate() error {
 	case CreationDerived:
 		if len(p.DerivedNamespaces) == 0 {
 			bad("row 2 is `derived` but declares no frozen namespaces")
+		}
+		if p.Creatable != nil {
+			// Otherwise the row says one thing and the predicate does another,
+			// and which one decides is whichever the core happens to consult.
+			bad("row 2 is `derived` and also supplies a predicate")
 		}
 	case CreationExplicit, CreationPredicate:
 		if p.Creatable == nil {
@@ -398,4 +408,20 @@ func (p *Profile) ServedOpClasses() []byte {
 func (p *Profile) ExtensionName(c byte) (string, bool) {
 	name, ok := p.ExtensionClasses.Value()[c]
 	return name, ok
+}
+
+// Derives reports whether this Root may found this Workspace id under a derived
+// creation policy: whether the id is uuid8(NS, root_pk) for one of the frozen
+// namespaces.
+//
+// Under `derived` a Root's Workspace ids are computable offline by anyone
+// holding the key, which is the whole of the row's value — so the server
+// computes the same arithmetic rather than taking the id on trust.
+func (p *Profile) Derives(rootPK [32]byte, workspace [16]byte) bool {
+	for _, ns := range p.DerivedNamespaces {
+		if wire.UUID8(ns, rootPK) == workspace {
+			return true
+		}
+	}
+	return false
 }

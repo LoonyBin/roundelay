@@ -12,6 +12,7 @@ import secrets
 
 import pytest
 
+from conftest import own
 from roundelay import crypto, fixtures, wire
 from roundelay.client import Device, Session
 
@@ -20,9 +21,14 @@ pytestmark = pytest.mark.usefixtures("server")
 ADMISSION = "conformance-admission"
 
 
-def shell(server, root: bytes) -> Session:
-    """A device with keys and no registration anywhere."""
-    return Session(server, Device(secrets.token_hex(8)), root)
+def shell(server, root: bytes | None = None) -> Session:
+    """A device with keys and no registration anywhere.
+
+    Its own Root by default: under a derived policy an id belongs to a key, so
+    two shells sharing one Root would be reaching for one Workspace.
+    """
+    return Session(server, Device(secrets.token_hex(8)),
+                   root if root is not None else secrets.token_bytes(32))
 
 
 # ── registration ────────────────────────────────────────────────────────────
@@ -34,7 +40,7 @@ def test_registration_is_idempotent(server, root):
     that retries a timed-out request must not be told it lost a race with
     itself."""
     device = shell(server, root)
-    cert, sig = device.genesis_cert(secrets.token_bytes(16))
+    cert, sig = device.genesis_cert(own(device))
 
     first = device.register(cert, sig, admission=ADMISSION)
     assert first.status == 201, first.body
@@ -53,7 +59,7 @@ def test_registration_is_idempotent(server, root):
 ])
 def test_malformed_keys_are_refused(server, root, field, value, code):
     device = shell(server, root)
-    cert, sig = device.genesis_cert(secrets.token_bytes(16))
+    cert, sig = device.genesis_cert(own(device))
     body = {
         "member_id": fixtures.uuid(device.d.member_id),
         "control_pk": fixtures.b64(device.d.control_pk),
@@ -77,7 +83,7 @@ def test_a_claimed_key_id_must_be_the_derivation(server, root, which):
     than believed — otherwise a device could name an id it does not hold and
     every wrap addressed to it would go somewhere else."""
     device = shell(server, root)
-    cert, sig = device.genesis_cert(secrets.token_bytes(16))
+    cert, sig = device.genesis_cert(own(device))
     body = {
         "member_id": fixtures.uuid(device.d.member_id),
         "control_pk": fixtures.b64(device.d.control_pk),
@@ -104,7 +110,7 @@ def test_key_ids_is_all_or_nothing(server, root):
     """Optional as a whole, never member by member: a partial object is a
     client that thinks the server will fill the rest in."""
     device = shell(server, root)
-    cert, sig = device.genesis_cert(secrets.token_bytes(16))
+    cert, sig = device.genesis_cert(own(device))
 
     def send(key_ids):
         body = {
@@ -151,7 +157,7 @@ def test_a_member_id_belongs_to_one_key_set(server, root, differs):
     """The certificate checks sit above the conflict, so this is a device with
     a certificate of its own that happens to claim an id already taken."""
     device = shell(server, root)
-    cert, sig = device.genesis_cert(secrets.token_bytes(16))
+    cert, sig = device.genesis_cert(own(device))
     assert device.register(cert, sig, admission=ADMISSION).status == 201
 
     impostor = Device(secrets.token_hex(8))
@@ -160,7 +166,7 @@ def test_a_member_id_belongs_to_one_key_set(server, root, differs):
         if name != differs:
             setattr(impostor, name, getattr(device.d, name))
     other = Session(server, impostor, root)
-    got = other.register(*other.genesis_cert(secrets.token_bytes(16)),
+    got = other.register(*other.genesis_cert(own(other)),
                          admission=ADMISSION)
     assert got.status == 409, got.body
     assert got.code == "member_id_already_registered"
@@ -176,7 +182,7 @@ def test_an_omitted_key_is_a_shape_refusal(server, root, missing, code):
     """All three are required on every registration, so leaving one out is
     never a conflict with what is stored — there is nothing to compare."""
     device = shell(server, root)
-    cert, sig = device.genesis_cert(secrets.token_bytes(16))
+    cert, sig = device.genesis_cert(own(device))
     assert device.register(cert, sig, admission=ADMISSION).status == 201
 
     body = {
@@ -200,7 +206,7 @@ def test_the_founding_branch_is_gated_by_its_certificate(server, root):
     """No Workspace of that id exists yet, so the certificate in the body is
     the whole of the authorisation."""
     device = shell(server, root)
-    ws = secrets.token_bytes(16)
+    ws = own(device)
 
     cert, sig = device.genesis_cert(ws)
     got = device.register(cert, crypto.sign(secrets.token_bytes(32), b"nonsense"),
@@ -231,7 +237,7 @@ def test_an_access_token_is_not_a_refresh_token(server, founded, root):
 
     # And one scoped to another device is not this device's.
     other = shell(server, root)
-    cert, sig = other.genesis_cert(secrets.token_bytes(16))
+    cert, sig = other.genesis_cert(own(other))
     assert other.register(cert, sig, admission=ADMISSION).status == 201
     assert other.log_in().status == 200
     got = server.post(path, json_body={"refresh_token": other.d.refresh})
@@ -292,7 +298,7 @@ def test_a_challenge_is_spent_by_the_attempt(server, root):
     """Win or lose. A nonce that survived a failure would let an attacker
     grind signatures against one challenge."""
     device = shell(server, root)
-    cert, sig = device.genesis_cert(secrets.token_bytes(16))
+    cert, sig = device.genesis_cert(own(device))
     assert device.register(cert, sig, admission=ADMISSION).status == 201
     path = f"/v1/members/{fixtures.uuid(device.d.member_id)}"
 
@@ -328,7 +334,7 @@ def test_a_challenge_for_an_unknown_member(server, root):
         assert got.status == 404, got.body
         assert got.code == "unknown_member"
 
-    cert, sig = device.genesis_cert(secrets.token_bytes(16))
+    cert, sig = device.genesis_cert(own(device))
     assert device.register(cert, sig, admission=ADMISSION).status == 201
     assert server.post(path).status == 200
 
@@ -353,7 +359,7 @@ def test_the_list_is_exactly_this_workspaces_members(server, founded, enrol, roo
     founder, ws = founded
     member = enrol(ws, founder)
     outsider = shell(server, root)
-    cert, sig = outsider.genesis_cert(secrets.token_bytes(16))
+    cert, sig = outsider.genesis_cert(own(outsider))
     assert outsider.register(cert, sig, admission=ADMISSION).status == 201
 
     got = founder.s.get(f"/v1/w/{fixtures.uuid(ws)}/members", token=founder.d.access)

@@ -58,10 +58,17 @@ func LoadBindings(path string) (*Bindings, error) {
 var paramSuffix = regexp.MustCompile(`\[[^\]]*\]$`)
 
 // normalise turns a collected node id into the spelling the checklist uses:
-// suite-root-relative in the file, repository-relative in the column.
+// repository-relative in the column, and pytest's node ids are relative to its
+// own rootdir, which is the suite.
+//
+// Go's are already repository-relative, and are told apart by the file they
+// name — pytest collects from .py, the toolchain from _test.go — rather than by
+// which collector produced them, so a merged set normalises correctly whatever
+// order it arrived in.
 func normalise(nodeID string) string {
 	id := paramSuffix.ReplaceAllString(nodeID, "")
-	if !strings.HasPrefix(id, SuiteRoot) {
+	file, _, _ := strings.Cut(id, "::")
+	if strings.HasSuffix(file, ".py") && !strings.HasPrefix(id, SuiteRoot) {
 		id = SuiteRoot + id
 	}
 	return id
