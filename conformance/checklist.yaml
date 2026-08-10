@@ -471,7 +471,7 @@ items:
   subject: server
   observable: black-box
   codes: [invalid_credential]
-  test: tests/conformance/test_credentials.py::test_access_token_separation
+  test: tests/conformance/test_identity.py::test_a_refresh_token_is_not_a_bearer_token
 
 - id: CONF-CRED-002
   requirement: >
@@ -481,7 +481,7 @@ items:
   subject: server
   observable: black-box
   codes: [invalid_refresh_token]
-  test: tests/conformance/test_credentials.py::test_refresh_token_separation
+  test: tests/conformance/test_identity.py::test_an_access_token_is_not_a_refresh_token
 
 - id: CONF-CRED-003
   requirement: "A refresh token rotates: the presented token is revoked and a fresh pair issued."
@@ -489,7 +489,7 @@ items:
   subject: server
   observable: black-box
   codes: [invalid_refresh_token]
-  test: tests/conformance/test_credentials.py::test_refresh_rotation
+  test: tests/conformance/test_identity.py::test_a_refresh_rotates_the_pair
 
 - id: CONF-CRED-004
   requirement: A live refresh token cannot be reconstructed from server storage.
@@ -505,7 +505,7 @@ items:
   subject: server
   observable: black-box
   codes: [invalid_credential, invalid_refresh_token, bad_member_challenge]
-  test: tests/conformance/test_credentials.py::test_www_authenticate
+  test: tests/conformance/test_identity.py::test_every_401_offers_the_scheme
 
 - id: CONF-CRED-006
   requirement: >
@@ -517,7 +517,7 @@ items:
   subject: server
   observable: black-box
   codes: [workspace_not_reachable, bad_root_signature]
-  test: tests/conformance/test_credentials.py::test_registration_is_certificate_gated
+  test: tests/conformance/test_identity.py::test_the_founding_branch_is_gated_by_its_certificate
 
 - id: CONF-CRED-007
   requirement: >
@@ -527,7 +527,7 @@ items:
   subject: server
   observable: black-box
   codes: [bad_member_challenge]
-  test: tests/conformance/test_member_auth.py::test_challenge_consumed_on_attempt
+  test: tests/conformance/test_identity.py::test_a_challenge_is_spent_by_the_attempt
 
 - id: CONF-CRED-008
   requirement: >
@@ -537,7 +537,7 @@ items:
   subject: server
   observable: black-box
   codes: [unknown_member, member_challenge_rate_limited]
-  test: tests/conformance/test_member_auth.py::test_existence_before_counter
+  test: tests/conformance/test_identity.py::test_a_challenge_for_an_unknown_member
 
 # ── Authorization ────────────────────────────────────────────────────────────
 
@@ -744,7 +744,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_members.py::test_create_then_idempotent_repeat
+  test: tests/conformance/test_identity.py::test_registration_is_idempotent
 
 - id: CONF-MEM-002
   requirement: >
@@ -753,7 +753,7 @@ items:
   subject: server
   observable: black-box
   codes: [malformed_sign_pk, malformed_kex_pk, malformed_key_id, key_id_not_derived_from_sign_pk]
-  test: tests/conformance/test_members.py::test_key_validation
+  test: tests/conformance/test_identity.py::test_malformed_keys_are_refused
 
 - id: CONF-MEM-003
   requirement: >
@@ -766,7 +766,7 @@ items:
   subject: server
   observable: black-box
   codes: [member_id_already_registered, malformed_sign_pk, malformed_kex_pk]
-  test: tests/conformance/test_members.py::test_conflict_cases
+  test: tests/conformance/test_identity.py::test_a_member_id_belongs_to_one_key_set
 
 - id: CONF-MEM-004
   requirement: >
@@ -777,7 +777,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_members.py::test_workspace_scoped_list
+  test: tests/conformance/test_identity.py::test_the_list_is_exactly_this_workspaces_members
 
 - id: CONF-MEM-005
   requirement: >
@@ -787,7 +787,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_members.py::test_scoping_exclusions
+  test: tests/conformance/test_identity.py::test_the_list_is_exactly_this_workspaces_members
 
 - id: CONF-MEM-006
   requirement: >
@@ -797,7 +797,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_members.py::test_pregenesis_empty_list
+  test: tests/conformance/test_identity.py::test_a_pre_genesis_member_list_is_empty
 
 - id: CONF-MEM-007
   requirement: >
@@ -810,7 +810,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_members.py::test_member_paging
+  test: tests/conformance/test_identity.py::test_the_member_list_pages_on_raw_bytes
 
 - id: CONF-MEM-008
   requirement: >
@@ -821,7 +821,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_members.py::test_cursor_need_not_resolve
+  test: tests/conformance/test_identity.py::test_the_member_list_pages_on_raw_bytes
 
 - id: CONF-MEM-009
   requirement: >
@@ -832,7 +832,7 @@ items:
   subject: server
   observable: black-box
   codes: [malformed_request, unknown_request_field]
-  test: tests/conformance/test_members.py::test_member_query_validation
+  test: tests/conformance/test_identity.py::test_member_list_parameters_are_never_clamped
 
 - id: CONF-MEM-010
   requirement: >
@@ -846,7 +846,7 @@ items:
   subject: server
   observable: black-box
   codes: [unknown_request_field, malformed_request]
-  test: tests/conformance/test_members.py::test_key_ids_shape
+  test: tests/conformance/test_identity.py::test_key_ids_is_all_or_nothing
 
 # ── Op log ───────────────────────────────────────────────────────────────────
 
@@ -1529,7 +1529,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_signal.py::test_handshake
+  test: tests/conformance/test_signal.py::test_the_socket_is_accepted_before_authentication
 
 - id: CONF-SIG-002
   requirement: >
@@ -1539,7 +1539,7 @@ items:
   subject: server
   observable: black-box
   codes: ["4400"]
-  test: tests/conformance/test_signal.py::test_close_4400
+  test: tests/conformance/test_signal.py::test_a_handshake_that_is_not_a_token
 
 - id: CONF-SIG-003
   requirement: >
@@ -1549,7 +1549,7 @@ items:
   subject: server
   observable: black-box
   codes: ["4401"]
-  test: tests/conformance/test_signal.py::test_close_4401
+  test: tests/conformance/test_signal.py::test_a_credential_that_is_not_a_device_access_token
 
 - id: CONF-SIG-004
   requirement: >
@@ -1559,7 +1559,7 @@ items:
   subject: server
   observable: black-box
   codes: ["4403"]
-  test: tests/conformance/test_signal.py::test_close_4403
+  test: tests/conformance/test_signal.py::test_a_device_registered_nowhere_here
 
 - id: CONF-SIG-005
   requirement: >
@@ -1569,7 +1569,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_signal.py::test_frame_vocabulary
+  test: tests/conformance/test_signal.py::test_the_socket_says_only_look_again
 
 - id: CONF-SIG-006
   requirement: N appends before a subscriber wakes deliver one poke, not N.
@@ -1577,7 +1577,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_signal.py::test_coalescing
+  test: tests/conformance/test_signal.py::test_the_socket_says_only_look_again
 
 - id: CONF-SIG-007
   requirement: Access-token expiry does not close a live socket.
@@ -1585,7 +1585,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_signal.py::test_expiry_does_not_close
+  test: tests/conformance/test_signal.py::test_an_expiring_access_token_does_not_close_a_live_socket
 
 - id: CONF-SIG-008
   requirement: >
@@ -1596,7 +1596,7 @@ items:
   subject: server
   observable: black-box
   codes: []
-  test: tests/conformance/test_signal.py::test_pregenesis_socket
+  test: tests/conformance/test_signal.py::test_a_shell_may_watch_a_workspace_that_does_not_exist
 
 # ── Vault ────────────────────────────────────────────────────────────────────
 
@@ -2703,7 +2703,7 @@ items:
   subject: server
   observable: black-box
   codes: [author_key_class_mismatch, no_live_grant]
-  test: tests/conformance/test_device_keys.py::test_key_matches_class
+  test: tests/conformance/test_identity.py::test_the_key_class_must_match_the_op_class
 
 - id: CONF-DKEY-002
   requirement: >
@@ -2713,7 +2713,7 @@ items:
   subject: server
   observable: black-box
   codes: [bad_member_challenge]
-  test: tests/conformance/test_device_keys.py::test_challenge_takes_control_key
+  test: tests/conformance/test_identity.py::test_a_challenge_is_spent_by_the_attempt
 
 - id: CONF-DKEY-003
   requirement: >
@@ -2724,7 +2724,7 @@ items:
   subject: server
   observable: black-box
   codes: [key_id_not_derived_from_sign_pk]
-  test: tests/conformance/test_device_keys.py::test_both_keys_registered
+  test: tests/conformance/test_identity.py::test_a_claimed_key_id_must_be_the_derivation
 
 # ── Revocation reach ─────────────────────────────────────────────────────────
 

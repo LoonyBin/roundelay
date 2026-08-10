@@ -48,6 +48,10 @@ def b64(raw: bytes) -> str:
     return base64.b64encode(raw).decode()
 
 
+def b64d(text: str) -> bytes:
+    return base64.b64decode(text, validate=True)
+
+
 def uuid(raw: bytes) -> str:
     """Canonical lowercase 8-4-4-4-12: no braces, no prefix, no uppercase."""
     h = raw.hex()

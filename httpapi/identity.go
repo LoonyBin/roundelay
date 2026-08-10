@@ -68,8 +68,19 @@ func (h *IdentityHandler) ServeRegister(w http.ResponseWriter, r *http.Request) 
 	req.Cert = o.BytesAny("cert_b64")
 	copy(req.CertSig[:], o.Bytes("cert_sig_b64", 64))
 	copy(req.RootPK[:], o.Bytes("root_pk_b64", 32))
-	if RefuseDecode(w, body.Err()) {
-		return
+	if err := body.Err(); err != nil {
+		// The key fields have codes of their own, and each names a different
+		// repair: a 31-byte signing key, a kex key that is not a key, a claimed
+		// id of the wrong width. Collapsing all three into malformed_request
+		// would make where the failure was caught — the decoder here, or the
+		// length check inside Register — decide what the caller is told.
+		if r := registerFieldRefusal(err); r != nil {
+			writeRefusal(w, r)
+			return
+		}
+		if RefuseDecode(w, err) {
+			return
+		}
 	}
 
 	res, refusal := h.Registrar.Register(r.Context(), &req, r.Header.Get(AdmissionHeader))
@@ -99,6 +110,36 @@ func (h *IdentityHandler) ServeRegister(w http.ResponseWriter, r *http.Request) 
 		// is informative: it separates a shell from a registered device.
 		"chained": res.Chained,
 	})
+}
+
+// registerFieldRefusal maps a decode failure onto the registration's own field
+// codes. nil means "not one of ours", and the generic refusal answers.
+//
+// key_ids is the exception that proves the shape: a *missing* member is
+// malformed_request naming the path, because the object is optional as a whole
+// and never member by member — the caller's mistake is the object, not the key.
+func registerFieldRefusal(err error) *oplog.Refusal {
+	m, ok := err.(*strictjson.Malformed)
+	if !ok {
+		return nil
+	}
+	unproc := http.StatusUnprocessableEntity
+	for _, f := range m.Fields {
+		switch f {
+		case "control_pk", "content_pk":
+			return &oplog.Refusal{Status: unproc, Code: codes.MalformedSignPk}
+		case "kex_pk":
+			return &oplog.Refusal{Status: unproc, Code: codes.MalformedKexPk}
+		case "root_pk_b64":
+			return &oplog.Refusal{Status: unproc, Code: codes.MalformedRootPk}
+		case "key_ids.control_key_id", "key_ids.content_key_id", "key_ids.kex_key_id":
+			if m.Missing(f) {
+				return nil
+			}
+			return &oplog.Refusal{Status: unproc, Code: codes.MalformedKeyId}
+		}
+	}
+	return nil
 }
 
 // ServeChallenge is POST /v1/members/{member_id}/challenge.

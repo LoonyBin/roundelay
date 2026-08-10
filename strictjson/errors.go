@@ -135,3 +135,14 @@ func tidy(paths []string) []string {
 func (b *Body) bad(path, reason string) {
 	b.malformed = append(b.malformed, problem{path: path, reason: reason})
 }
+
+// Missing reports whether a path failed because it was absent rather than
+// because its value was wrong.
+//
+// The distinction matters wherever a route gives a field its own refusal code:
+// "your key is 31 bytes" and "you left the key out" are different mistakes with
+// different remedies, and a code named for the shape of a value says nothing
+// useful about a value that was never sent.
+func (e *Malformed) Missing(path string) bool {
+	return strings.Contains(e.Reasons[path], "missing")
+}

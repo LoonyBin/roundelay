@@ -33,6 +33,27 @@
     "CONF-AUTHZ-015": [
       "test_authority.py::test_the_exemption_is_not_a_hole"
     ],
+    "CONF-CRED-001": [
+      "test_identity.py::test_a_refresh_token_is_not_a_bearer_token"
+    ],
+    "CONF-CRED-002": [
+      "test_identity.py::test_an_access_token_is_not_a_refresh_token"
+    ],
+    "CONF-CRED-003": [
+      "test_identity.py::test_a_refresh_rotates_the_pair"
+    ],
+    "CONF-CRED-005": [
+      "test_identity.py::test_every_401_offers_the_scheme"
+    ],
+    "CONF-CRED-006": [
+      "test_identity.py::test_the_founding_branch_is_gated_by_its_certificate"
+    ],
+    "CONF-CRED-007": [
+      "test_identity.py::test_a_challenge_is_spent_by_the_attempt"
+    ],
+    "CONF-CRED-008": [
+      "test_identity.py::test_a_challenge_for_an_unknown_member"
+    ],
     "CONF-CTL-003": [
       "test_authority.py::test_the_zero_link_belongs_to_the_genesis_alone"
     ],
@@ -104,6 +125,21 @@
     ],
     "CONF-DISC-003": [
       "test_health.py::test_every_429_carries_retry_after"
+    ],
+    "CONF-DKEY-001": [
+      "test_identity.py::test_the_key_class_must_match_the_op_class"
+    ],
+    "CONF-DKEY-002": [
+      "test_identity.py::test_a_challenge_is_spent_by_the_attempt"
+    ],
+    "CONF-DKEY-003": [
+      "test_identity.py::test_malformed_keys_are_refused[control_pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==-malformed_sign_pk]",
+      "test_identity.py::test_malformed_keys_are_refused[content_pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA-malformed_sign_pk]",
+      "test_identity.py::test_malformed_keys_are_refused[kex_pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==-malformed_kex_pk]",
+      "test_identity.py::test_malformed_keys_are_refused[control_pk-!!not base64!!-malformed_sign_pk]",
+      "test_identity.py::test_a_claimed_key_id_must_be_the_derivation[control_key_id]",
+      "test_identity.py::test_a_claimed_key_id_must_be_the_derivation[content_key_id]",
+      "test_identity.py::test_a_claimed_key_id_must_be_the_derivation[kex_key_id]"
     ],
     "CONF-ESC-001": [
       "test_keyplane.py::test_the_first_write_is_version_one"
@@ -266,8 +302,78 @@
     "CONF-LOG-018": [
       "test_oplog.py::test_the_lookup_sits_above_stage_two"
     ],
+    "CONF-MEM-001": [
+      "test_identity.py::test_registration_is_idempotent"
+    ],
+    "CONF-MEM-002": [
+      "test_identity.py::test_malformed_keys_are_refused[control_pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==-malformed_sign_pk]",
+      "test_identity.py::test_malformed_keys_are_refused[content_pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA-malformed_sign_pk]",
+      "test_identity.py::test_malformed_keys_are_refused[kex_pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==-malformed_kex_pk]",
+      "test_identity.py::test_malformed_keys_are_refused[control_pk-!!not base64!!-malformed_sign_pk]"
+    ],
+    "CONF-MEM-003": [
+      "test_identity.py::test_a_member_id_belongs_to_one_key_set[control]",
+      "test_identity.py::test_a_member_id_belongs_to_one_key_set[content]",
+      "test_identity.py::test_a_member_id_belongs_to_one_key_set[kex]",
+      "test_identity.py::test_an_omitted_key_is_a_shape_refusal[control_pk-malformed_sign_pk]",
+      "test_identity.py::test_an_omitted_key_is_a_shape_refusal[content_pk-malformed_sign_pk]",
+      "test_identity.py::test_an_omitted_key_is_a_shape_refusal[kex_pk-malformed_kex_pk]"
+    ],
+    "CONF-MEM-004": [
+      "test_identity.py::test_the_list_is_exactly_this_workspaces_members"
+    ],
+    "CONF-MEM-005": [
+      "test_identity.py::test_the_list_is_exactly_this_workspaces_members"
+    ],
+    "CONF-MEM-006": [
+      "test_identity.py::test_a_pre_genesis_member_list_is_empty"
+    ],
+    "CONF-MEM-007": [
+      "test_identity.py::test_the_member_list_pages_on_raw_bytes"
+    ],
+    "CONF-MEM-008": [
+      "test_identity.py::test_the_member_list_pages_on_raw_bytes"
+    ],
+    "CONF-MEM-009": [
+      "test_identity.py::test_member_list_parameters_are_never_clamped[?limit=0-malformed_request]",
+      "test_identity.py::test_member_list_parameters_are_never_clamped[?limit=99999-malformed_request]",
+      "test_identity.py::test_member_list_parameters_are_never_clamped[?after=not-a-uuid-malformed_request]",
+      "test_identity.py::test_member_list_parameters_are_never_clamped[?after=0000000000000000000000000000ffff-malformed_request]",
+      "test_identity.py::test_member_list_parameters_are_never_clamped[?page=2-unknown_request_field]"
+    ],
+    "CONF-MEM-010": [
+      "test_identity.py::test_key_ids_is_all_or_nothing"
+    ],
     "CONF-REVK-002": [
       "test_authority.py::test_revocation_leaves_the_registration"
+    ],
+    "CONF-SIG-001": [
+      "test_signal.py::test_the_socket_is_accepted_before_authentication"
+    ],
+    "CONF-SIG-002": [
+      "test_signal.py::test_a_handshake_that_is_not_a_token[silence]",
+      "test_signal.py::test_a_handshake_that_is_not_a_token[close]",
+      "test_signal.py::test_a_handshake_that_is_not_a_token[binary]"
+    ],
+    "CONF-SIG-003": [
+      "test_signal.py::test_a_credential_that_is_not_a_device_access_token[nonsense]",
+      "test_signal.py::test_a_credential_that_is_not_a_device_access_token[refresh]"
+    ],
+    "CONF-SIG-004": [
+      "test_signal.py::test_a_device_that_may_not_watch_this_workspace",
+      "test_signal.py::test_a_device_registered_nowhere_here"
+    ],
+    "CONF-SIG-005": [
+      "test_signal.py::test_the_socket_says_only_look_again"
+    ],
+    "CONF-SIG-006": [
+      "test_signal.py::test_the_socket_says_only_look_again"
+    ],
+    "CONF-SIG-007": [
+      "test_signal.py::test_an_expiring_access_token_does_not_close_a_live_socket"
+    ],
+    "CONF-SIG-008": [
+      "test_signal.py::test_a_shell_may_watch_a_workspace_that_does_not_exist"
     ],
     "CONF-VER-001": [
       "test_versioning.py::test_prefix_placement"
