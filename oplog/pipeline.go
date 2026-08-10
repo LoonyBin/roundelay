@@ -44,6 +44,14 @@ type Pipeline struct {
 	Profile   *profile.Profile
 	Store     Store
 	Authority Authority
+
+	// Notify is poked after a successful commit in which at least one op was
+	// new.
+	//
+	// After, because a woken subscriber that pulls before the commit finds
+	// nothing and the poke is wasted. Only if something was new, because a pure
+	// repeat is not news.
+	Notify func(workspace [16]byte)
 }
 
 // Append runs the six-stage walk.
@@ -76,7 +84,21 @@ func (p *Pipeline) Append(ctx context.Context, workspace, device [16]byte, encod
 	if err := tx.Commit(); err != nil {
 		return nil, refuse(http.StatusServiceUnavailable, codes.StoreUnavailable, nil)
 	}
+	if p.Notify != nil && anyNew(results) {
+		p.Notify(workspace)
+	}
 	return results, nil
+}
+
+// anyNew reports whether the batch stored anything. A batch of pure repeats
+// changed nothing, and there is nothing for a subscriber to fetch.
+func anyNew(results []Result) bool {
+	for _, r := range results {
+		if !r.Duplicate {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *Pipeline) walk(ctx context.Context, tx Tx, workspace, device [16]byte, encoded []string) ([]Result, *Refusal) {
