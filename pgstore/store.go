@@ -22,6 +22,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"regexp"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -49,7 +50,11 @@ func (s *Store) OnSessionsEnded(f func(member [16]byte)) { s.onSessionsEnded = f
 
 // Open connects and applies the schema.
 func Open(ctx context.Context, dsn string) (*Store, error) {
-	pool, err := pgxpool.New(ctx, dsn)
+	cfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		return nil, err
+	}
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -57,12 +62,31 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 		pool.Close()
 		return nil, err
 	}
+	// A deployment that isolates its tables in a schema of its own gets it
+	// created, the same way the tables themselves are: the schema statement is
+	// idempotent DDL applied at open, and a search_path naming a schema that
+	// does not exist yet would otherwise fail on the first CREATE TABLE.
+	if name := cfg.ConnConfig.RuntimeParams["search_path"]; name != "" {
+		if !schemaName.MatchString(name) {
+			pool.Close()
+			return nil, fmt.Errorf("pgstore: search_path %q is not a bare identifier", name)
+		}
+		if _, err := pool.Exec(ctx, `create schema if not exists "`+name+`"`); err != nil {
+			pool.Close()
+			return nil, fmt.Errorf("pgstore: creating schema %s: %w", name, err)
+		}
+	}
 	if _, err := pool.Exec(ctx, schema); err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("pgstore: applying schema: %w", err)
 	}
 	return &Store{pool: pool}, nil
 }
+
+// schemaName is deliberately narrow. The value is interpolated into DDL, which
+// no amount of care makes safe for an arbitrary string, so only a bare
+// identifier is accepted and everything else is a configuration error.
+var schemaName = regexp.MustCompile(`^[a-z_][a-z0-9_]*$`)
 
 // Pool exposes the underlying pool, for a deployment that shares it.
 func (s *Store) Pool() *pgxpool.Pool { return s.pool }

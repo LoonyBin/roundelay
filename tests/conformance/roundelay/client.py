@@ -519,6 +519,21 @@ class Session:
             "type": "hard_prune", "targets": targets,
         }, **kw)
 
+    def prune_ext(self, workspace: bytes, op_class: int, name: str,
+                  targets: list[dict[str, Any]], **kw) -> str:
+        """A prune_ext carries no reprise.
+
+        Folding an extension-class op does not replace it with another: there
+        is no reprise to name, and a payload that carried one would be naming
+        something the server never resolves.
+        """
+        return self.control_class(workspace, wire.CLASS_PRUNE, {
+            "type": "prune_ext",
+            "op_class": op_class,
+            "name": name,
+            "targets": targets,
+        }, **kw)
+
     def prune_payload(self, workspace: bytes, payload: Any, **kw) -> str:
         return self.control_class(workspace, wire.CLASS_PRUNE, payload, **kw)
 

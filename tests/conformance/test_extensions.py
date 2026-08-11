@@ -17,7 +17,8 @@ import secrets
 
 import pytest
 
-from conftest import EXT_CLASS, EXT_NAME, OPAQUE_CLASS
+from conftest import (EXT_CLASS, EXT_NAME, OPAQUE_CLASS, SECOND_EXT_CLASS,
+                      SECOND_EXT_NAME)
 from roundelay import fixtures
 
 pytestmark = pytest.mark.usefixtures("ext_server")
@@ -353,7 +354,8 @@ def test_enabling_extensions_leaves_the_core_domains_alone(server, ext_server):
 
     # The two deployments differ in exactly the extension list.
     assert server.health["extension_classes"] == {}
-    assert ext_server.health["extension_classes"] == {str(EXT_CLASS): EXT_NAME}
+    assert ext_server.health["extension_classes"] == {
+        str(EXT_CLASS): EXT_NAME, str(SECOND_EXT_CLASS): SECOND_EXT_NAME}
     assert server.health["profile"] == ext_server.health["profile"]
 
     # And the fifteen core domains are the same on both, because they are a

@@ -1356,7 +1356,7 @@ items:
   subject: server
   observable: black-box
   codes: [malformed_prune_payload, prune_targets_empty, prune_duplicate_target, prune_targets_too_many]
-  test: tests/conformance/test_prune.py::test_prune_ext_shape_rules
+  test: tests/conformance/test_prune_ext.py::test_a_prune_ext_never_carries_a_reprise
 
 - id: CONF-PRUNE-008
   requirement: >
@@ -1374,7 +1374,7 @@ items:
   subject: server
   observable: black-box
   codes: [prune_target_not_found, prune_target_is_control, prune_target_is_prune, prune_target_is_server_read, prune_ext_wrong_class, prune_target_attestation_mismatch, prune_ext_name_mismatch, prune_target_already_reprised]
-  test: tests/conformance/test_prune.py::test_prune_ext_target_order
+  test: tests/conformance/test_prune_ext.py::test_the_per_target_order
 
 - id: CONF-PRUNE-009
   requirement: >
@@ -1390,7 +1390,7 @@ items:
   subject: server
   observable: black-box
   codes: [prune_ext_name_mismatch]
-  test: tests/conformance/test_prune.py::test_prune_ext_name_is_positional
+  test: tests/conformance/test_prune_ext.py::test_the_name_is_the_one_in_force_at_the_targets_position
 
 - id: CONF-PRUNE-010
   requirement: >
@@ -1404,7 +1404,7 @@ items:
   subject: server
   observable: black-box
   codes: [ext_class_not_enabled]
-  test: tests/conformance/test_prune.py::test_prune_ext_needs_no_binding
+  test: tests/conformance/test_prune_ext.py::test_the_author_needs_no_binding_of_its_own
 
 - id: CONF-PRUNE-011
   requirement: >
@@ -1431,7 +1431,7 @@ items:
   subject: server
   observable: black-box
   codes: [hard_prune_target_not_reprised]
-  test: tests/conformance/test_prune.py::test_prune_ext_mark_composes_with_hard_prune
+  test: tests/conformance/test_prune_ext.py::test_a_fold_marks_and_a_hard_prune_destroys
 
 - id: CONF-PRUNE-013
   requirement: >
@@ -1456,7 +1456,7 @@ items:
   subject: client
   observable: black-box
   codes: []
-  test: tests/conformance/client/test_extensions.py::test_prune_ext_name_from_the_log
+  test: tests/conformance/test_prune_ext.py::test_a_client_takes_the_name_from_the_log
 
 # ── Append effects ───────────────────────────────────────────────────────────
 

@@ -204,8 +204,9 @@ def test_the_digest_the_server_computes_sorts_by_raw_bytes(founded, enrol):
     # that separates the two orderings is found without touching the server and
     # the test enrols exactly one device every run.
     mine = founder.d.member_id
+    run = secrets.token_hex(4)
     label = next(
-        candidate for candidate in (f"digest-order/{i}" for i in range(10_000))
+        candidate for candidate in (f"digest-order/{run}/{i}" for i in range(10_000))
         if (mine < Device(candidate).member_id)
         != (fixtures.b64(mine) < fixtures.b64(Device(candidate).member_id))
     )

@@ -445,11 +445,43 @@
       "test_prune.py::test_the_attestation_is_over_the_whole_envelope[body]",
       "test_prune.py::test_the_attestation_is_over_the_whole_envelope[payload]"
     ],
+    "CONF-PRUNE-007": [
+      "test_prune_ext.py::test_prune_ext_shape_rules[payload0-no op_class]",
+      "test_prune_ext.py::test_prune_ext_shape_rules[payload1-no name]",
+      "test_prune_ext.py::test_prune_ext_shape_rules[payload2-an op_class below 192]",
+      "test_prune_ext.py::test_prune_ext_shape_rules[payload3-an op_class above 255]",
+      "test_prune_ext.py::test_prune_ext_shape_rules[payload4-an op_class spelled as hex]",
+      "test_prune_ext.py::test_prune_ext_shape_rules[payload5-a name with a capital]",
+      "test_prune_ext.py::test_prune_ext_shape_rules[payload6-a name ending in a dash]",
+      "test_prune_ext.py::test_prune_ext_shape_rules[payload7-an empty name]",
+      "test_prune_ext.py::test_prune_ext_shape_rules[payload8-a name over 32 bytes]",
+      "test_prune_ext.py::test_prune_ext_shape_rules[payload9-an unrecognised key]",
+      "test_prune_ext.py::test_a_prune_ext_never_carries_a_reprise",
+      "test_prune_ext.py::test_the_target_shape_rules_bind_identically"
+    ],
+    "CONF-PRUNE-008": [
+      "test_prune_ext.py::test_the_per_target_order",
+      "test_prune_ext.py::test_the_targets_are_judged_in_payload_order"
+    ],
+    "CONF-PRUNE-009": [
+      "test_prune_ext.py::test_the_name_is_the_one_in_force_at_the_targets_position"
+    ],
+    "CONF-PRUNE-010": [
+      "test_prune_ext.py::test_the_author_needs_no_binding_of_its_own",
+      "test_prune_ext.py::test_the_named_class_is_judged_for_range_alone"
+    ],
     "CONF-PRUNE-011": [
       "test_prune.py::test_a_bare_prune_class_confers_prune_alone"
     ],
+    "CONF-PRUNE-012": [
+      "test_prune_ext.py::test_a_fold_marks_and_a_hard_prune_destroys",
+      "test_prune_ext.py::test_what_no_prune_ext_has_marked"
+    ],
     "CONF-PRUNE-013": [
       "test_prune.py::test_a_prune_is_the_target_of_nothing"
+    ],
+    "CONF-PRUNE-014": [
+      "test_prune_ext.py::test_a_client_takes_the_name_from_the_log"
     ],
     "CONF-QUOTA-001": [
       "test_quota.py::test_the_refusal_says_nothing_but_the_code"

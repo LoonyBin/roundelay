@@ -98,8 +98,32 @@ def _build() -> pathlib.Path:
     return binary
 
 
-def _start(binary: pathlib.Path, *args: str) -> tuple[str, subprocess.Popen]:
+# A durable store, when one is offered. The suite is identical either way —
+# which is the claim: nothing in it depends on how the server keeps its log.
+# Set it and every deployment the factory starts is Postgres-backed.
+DSN = os.environ.get("ROUNDELAY_TEST_DSN", "")
+
+
+_schemas: dict[tuple[str, ...], str] = {}
+
+
+def _dsn_for(args: tuple[str, ...], schema: str | None = None) -> str:
+    """A schema of its own per deployment.
+
+    Two servers with different profiles are two deployments, not two front ends
+    over one log — the extension deployment's ops have no business being
+    visible to the one that does not serve those classes. A schema keeps them
+    apart inside one database, and the same DSN otherwise.
+    """
+    name = schema or _schemas.setdefault(args, f"rc_{len(_schemas)}_{secrets.token_hex(4)}")
+    joiner = "&" if "?" in DSN else "?"
+    return f"{DSN}{joiner}search_path={name}"
+
+
+def _start(binary: pathlib.Path, *args: str, schema: str | None = None) -> tuple[str, subprocess.Popen]:
     port = _free_port()
+    if DSN and "-dsn" not in args:
+        args = (*args, "-dsn", _dsn_for(args, schema))
     proc = subprocess.Popen(
         [str(binary), "-addr", f"127.0.0.1:{port}", *args],
         cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
@@ -141,14 +165,23 @@ def deployment():
     procs: list[subprocess.Popen] = []
     binary: list[pathlib.Path] = []
 
-    def make(*args: str) -> str:
-        if args in running:
-            return running[args]
+    def make(*args: str, schema: str | None = None) -> str:
+        """Start (or reuse) a deployment.
+
+        schema names a log to share. Two deployments over one log is how a
+        *reconfiguration* is observed: the operator changes what the server
+        implements, the log is still there, and the rules about what happens to
+        ops written under the old configuration become testable. It needs a
+        durable store, so a test that asks for one skips without.
+        """
+        key = (*args, schema or "")
+        if key in running:
+            return running[key]
         if not binary:
             binary.append(_build())
-        url, proc = _start(binary[0], *args)
+        url, proc = _start(binary[0], *args, schema=schema)
         procs.append(proc)
-        running[args] = url
+        running[key] = url
         return url
 
     yield make
@@ -298,7 +331,8 @@ def ext_base_url(deployment) -> str:
     return deployment(
         "-admission", f"token:{ADMISSION_TOKEN}",
         "-opaque-classes", f"{OPAQUE_CLASS:02x}",
-        "-extension-classes", f"{EXT_CLASS:02x}={EXT_NAME}",
+        "-extension-classes",
+        f"{EXT_CLASS:02x}={EXT_NAME},{SECOND_EXT_CLASS:02x}={SECOND_EXT_NAME}",
     )
 
 
@@ -332,7 +366,8 @@ def ext_founded(ext_server: Server, root: bytes) -> tuple[Session, bytes]:
     # a class does not author it — so widen owner before anything else.
     got = session.post_ops(ws, session.role_table(ws, [
         {"role": "owner",
-         "classes": [0x01, 0x02, OPAQUE_CLASS, 0x80, 0x81, 0xBF, EXT_CLASS],
+         "classes": [0x01, 0x02, OPAQUE_CLASS, 0x80, 0x81, 0xBF,
+                     EXT_CLASS, SECOND_EXT_CLASS],
          "prune_types": ["prune", "prune_ext", "hard_prune"]},
         {"role": "participant", "classes": [0x01], "prune_types": []},
     ]))
@@ -380,3 +415,17 @@ def found(server: Server, root: bytes) -> tuple[Session, bytes]:
     assert got.status == 200, got.body
     session.resync()
     return session, ws
+
+
+# ── a second extension class, and reconfiguration ───────────────────────────
+
+SECOND_EXT_CLASS = 0xCD
+SECOND_EXT_NAME = "copy"
+
+
+def requires_durable_store():
+    """Skip a test that needs a log to outlive the process that wrote it."""
+    return pytest.mark.skipif(
+        not DSN,
+        reason="needs ROUNDELAY_TEST_DSN: a reconfiguration is two processes over one log",
+    )
