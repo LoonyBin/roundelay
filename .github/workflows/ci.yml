@@ -78,13 +78,20 @@ jobs:
       - run: make pg-test
 
       # The suite starts its own server, and with the DSN set every deployment
-      # it starts is Postgres-backed. Without the DSN one test skips and the
-      # run still reports green — so assert on zero skips rather than trusting
-      # the exit status alone.
+      # it starts is Postgres-backed — 292 passed, 0 skipped. Without the DSN
+      # one test skips and the run still reports green, so -rs prints the
+      # reason for any skip rather than letting it pass unread.
+      #
+      # working-directory is load-bearing, not tidiness. pytest node ids are
+      # relative to its rootdir, so running this from the repo root records
+      # every binding as `tests/conformance/test_x.py::...` while the committed
+      # bindings.json and the checklist's test column both say `test_x.py::...`.
+      # Running from here is what makes the two comparable.
       - name: conformance suite (Postgres-backed)
+        working-directory: tests/conformance
         env:
           ROUNDELAY_TEST_DSN: postgres://postgres:roundelay@127.0.0.1:55432/roundelay?sslmode=disable
-        run: pytest tests/conformance -q -p no:cacheprovider --strict-markers -rs
+        run: pytest -q -p no:cacheprovider --strict-markers -rs
 
       # The suite rewrites bindings.json as it collects. If that differs from
       # what is committed, the lint's "N of 250 items decided by a test that
