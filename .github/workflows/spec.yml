@@ -1,0 +1,61 @@
+name: Spec
+
+# This branch is the normative specification and carries no implementation, so
+# there is nothing here to build or test. What it can be held to is that the
+# checklist is well formed and internally consistent — which is what the
+# conformance lint decides.
+#
+# The lint itself lives on `dev`, because it is Go. That cross-branch reach is
+# the honest shape of the dependency today: there is exactly one lint and the
+# spec branch cannot compile it. It is checked out read-only below.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spec-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: conformance lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: check out the spec
+        uses: actions/checkout@v4
+        with:
+          path: spec
+
+      - name: check out the lint
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+          path: tool
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tool/go.mod
+          cache-dependency-path: tool/go.sum
+
+      # Three of the five lints, deliberately.
+      #
+      # `coverage` and `bindings` do not decide this checklist against itself —
+      # they decide it against `dev`'s compiled refusal vocabulary and against
+      # `dev`'s collected tests. While the two branches carry different specs
+      # (194 items here, 250 there) those two are guaranteed red, and they are
+      # red about the spec divergence, which is LOO-24's subject, not CI's.
+      # When LOO-24 lands and `dev` consumes this branch's spec rather than
+      # maintaining its own, drop the flag and run all five.
+      - name: conformance lint
+        working-directory: tool
+        run: |
+          go run ./internal/conformance/cmd/conformance-lint \
+            -lints=structure,vocabulary,observability \
+            ../spec/conformance/checklist.yaml
