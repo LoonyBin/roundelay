@@ -74,8 +74,10 @@ void main() {
       final b = cases.firstWhere((k) => k['name'] == 'collision_b');
       // Without the length prefix these two concatenate to identical bytes.
       expect(
-        (a['domain'] as String) + utf8.decode(_hexDecode(a['rest_hex'] as String)),
-        (b['domain'] as String) + utf8.decode(_hexDecode(b['rest_hex'] as String)),
+        (a['domain'] as String) +
+            utf8.decode(_hexDecode(a['rest_hex'] as String)),
+        (b['domain'] as String) +
+            utf8.decode(_hexDecode(b['rest_hex'] as String)),
         reason: 'the vector pair must actually collide under concatenation, '
             'or this test proves nothing',
       );
@@ -108,12 +110,12 @@ void main() {
         final ns = _uuidBytes(k['namespace'] as String);
         final rootPk = base64.decode(k['root_pk_b64'] as String);
 
-        expect(_sha256Hex(<int>[...ns, ...rootPk]),
-            k['sha256_of_preimage_hex'],
+        expect(_sha256Hex(<int>[...ns, ...rootPk]), k['sha256_of_preimage_hex'],
             reason: 'the preimage is namespace || root_pk, raw bytes');
 
         final id = uuid8(ns, rootPk);
-        expect(_hexEncode(id), _hexEncode(_uuidBytes(k['workspace_id'] as String)));
+        expect(_hexEncode(id),
+            _hexEncode(_uuidBytes(k['workspace_id'] as String)));
         expect(id[6] >> 4, k['version_nibble']);
         expect(id[8] >> 6, k['variant_bits']);
       });
@@ -167,7 +169,8 @@ void main() {
       step: spec['oversize_step'] as int,
     );
 
-    for (final k in (v['legal_body_len'] as List).cast<Map<String, dynamic>>()) {
+    for (final k
+        in (v['legal_body_len'] as List).cast<Map<String, dynamic>>()) {
       test('legal_body_len(${k['body_len']}) == ${k['legal']}', () {
         expect(ladder.legalBodyLen(k['body_len'] as int), k['legal']);
       });
@@ -334,7 +337,8 @@ void main() {
       final chain = v['control_chain'] as Map<String, dynamic>;
       // prev_control_hash is bare SHA-256 over the previous control op's
       // unpacked payload bytes — not the envelope, not a re-serialisation.
-      expect(_hexEncode(payloadHash(utf8.encode(chain['payload_utf8'] as String))),
+      expect(
+          _hexEncode(payloadHash(utf8.encode(chain['payload_utf8'] as String))),
           chain['prev_control_hash_hex']);
       expect(chain['envelope_hash_is_framed'], isFalse);
     });
@@ -443,8 +447,8 @@ void main() {
     });
 
     test('an extension op verified under the wrong NAME is refused', () {
-      final e = envelopes.firstWhere(
-          (x) => (x['header']['op_class'] as int) & 0xC0 == 0xC0);
+      final e = envelopes
+          .firstWhere((x) => (x['header']['op_class'] as int) & 0xC0 == 0xC0);
       // The signature is good; the domain a differently-built client computes
       // is not. This is the separation working, not a failure.
       expect(
@@ -470,8 +474,9 @@ void main() {
       // key cannot be filed under an id that is not its own.
       final ring = KeyRing();
       final pk = base64.decode((kid['cases'] as List)
-          .cast<Map<String, dynamic>>()
-          .firstWhere((k) => k['kind'] == 'ed25519')['public_key_b64'] as String);
+              .cast<Map<String, dynamic>>()
+              .firstWhere((k) => k['kind'] == 'ed25519')['public_key_b64']
+          as String);
       ring.add(pk);
       expect(ring.lookup(keyId(pk)), isNotNull);
       expect(ring.lookup(Uint8List(8)), isNull);
@@ -483,8 +488,8 @@ void main() {
       // Not a vector: this proves the library is self-consistent, which is what
       // lets a failing vector test be read as "the corpus disagrees with us"
       // rather than "signing is broken".
-      final seed = Uint8List.fromList(
-          List<int>.generate(32, (i) => (i * 7 + 3) % 256));
+      final seed =
+          Uint8List.fromList(List<int>.generate(32, (i) => (i * 7 + 3) % 256));
       final pk = await ed25519Public(seed);
 
       final header = Header(
@@ -499,8 +504,8 @@ void main() {
       final ring = KeyRing()..add(pk);
       final env = await verifyEnvelope(raw, keys: ring, namespace: 'acme');
       expect(env.header.authorSeq, 42);
-      expect(utf8.decode(const Ladder().unpackBody(env.body)),
-          'hello roundelay');
+      expect(
+          utf8.decode(const Ladder().unpackBody(env.body)), 'hello roundelay');
 
       raw[headerLen + 6] ^= 0x01;
       expect(

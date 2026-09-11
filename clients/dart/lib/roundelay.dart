@@ -21,5 +21,6 @@ export 'src/crypto.dart'
         sign,
         uuid8,
         verify;
-export 'src/verify.dart' show KeyRing, Refusal, RefusedException, verifyEnvelope;
+export 'src/verify.dart'
+    show KeyRing, Refusal, RefusedException, verifyEnvelope;
 export 'src/wire.dart';

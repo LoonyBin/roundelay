@@ -37,9 +37,7 @@ bool isExtension(int opClass) => opClass & 0xC0 == 0xC0;
 /// domain separation is what stops two unrelated extensions that happen to
 /// share a class byte from being confused for each other.
 String opDomain(String namespace, int opClass, [String extName = '']) =>
-    isExtension(opClass)
-        ? '$namespace/ext/$extName/v1'
-        : '$namespace/op/v1';
+    isExtension(opClass) ? '$namespace/ext/$extName/v1' : '$namespace/op/v1';
 
 /// The profile's body size classes and oversize step.
 class Ladder {
