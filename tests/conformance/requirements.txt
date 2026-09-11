@@ -1,0 +1,9 @@
+# The black-box conformance suite's dependencies.
+#
+# Unpinned on purpose: the suite is meant to be runnable against any server by
+# anyone, so it should not insist on one afternoon's resolution of the tree.
+# CI pins the Python version instead, which is where the breakage actually is.
+pytest
+httpx
+websockets
+cryptography

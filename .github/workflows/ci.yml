@@ -1,0 +1,93 @@
+name: CI
+
+# `make check` is the pipeline a conforming release runs. Until this file
+# existed nothing ran it, so every green result was a fact about one afternoon
+# rather than a maintained property.
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [dev]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: make check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # go-version-file, not a literal: `make check` gates on `gofmt -l`, and
+      # gofmt's output changes between Go releases. Reading the version from
+      # go.mod means a new Go does not turn this branch red for a reformatting
+      # nobody asked for — it goes red only when go.mod moves, deliberately.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - run: make check
+
+  postgres:
+    name: make pg-test + conformance suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      # Mapped to 55432 so the Makefile's default PG_DSN is correct verbatim
+      # and CI is running the command a developer runs.
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: roundelay
+          POSTGRES_DB: roundelay
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: tests/conformance/requirements.txt
+
+      - run: pip install -r tests/conformance/requirements.txt
+
+      # pgstore's tests skip *silently* without a DSN, so a run without this
+      # job is green while the store the server actually ships is untested.
+      - run: make pg-test
+
+      # The suite starts its own server, and with the DSN set every deployment
+      # it starts is Postgres-backed. Without the DSN one test skips and the
+      # run still reports green — so assert on zero skips rather than trusting
+      # the exit status alone.
+      - name: conformance suite (Postgres-backed)
+        env:
+          ROUNDELAY_TEST_DSN: postgres://postgres:roundelay@127.0.0.1:55432/roundelay?sslmode=disable
+        run: pytest tests/conformance -q -p no:cacheprovider --strict-markers -rs
+
+      # The suite rewrites bindings.json as it collects. If that differs from
+      # what is committed, the lint's "N of 250 items decided by a test that
+      # runs" was measured against a stale file.
+      - name: conformance bindings are current
+        run: git diff --exit-code -- conformance/bindings.json
