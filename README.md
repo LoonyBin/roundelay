@@ -106,3 +106,34 @@ Two lints hold over the checklist, and a conforming release runs both:
   traffic alone
 
 Both currently pass. Cite item ids in review: *"this loosens `CONF-LOG-014`"*.
+
+---
+
+## Licence
+
+Copyright © 2026 LoonyBin. Two licences, because a specification and a program are
+not the same kind of thing.
+
+**The specification — this README and everything under `docs/` — is [CC BY-ND
+4.0](LICENSE-DOCS).** Read it, quote it, mirror it, hand it round your company, for
+any purpose including a commercial one, as long as you credit it. What you may not
+publish is a *changed* version of the documents, and a translation or an edited fork
+counts as changed.
+
+Implementing the spec is not changing it. Build whatever you like from these
+documents — any language, any product, closed source or open — and the ND term never
+reaches your code.
+
+**Everything else — the Go implementation, the conformance checklist in
+[`conformance/`](conformance/) and the frozen vectors in [`vectors/`](vectors/) — is
+[AGPL-3.0-only](LICENSE).** Run it, read it, change it, pass it on; if you pass on a
+changed version, or run one where other people can reach it over a network, your
+changes go back out under the same licence. For a sync server the network clause is
+the one that bites: hosting a modified roundelay for others counts, even if you never
+ship a binary. Vendoring the checklist or the vectors into your own implementation
+carries that obligation into it.
+
+So: the spec is free to implement, and the code and test material are copyleft. If
+you want the checklist or the vectors under other terms — because you are shipping an
+independent implementation under a licence of your own — ask. That is a conversation,
+not a refusal.
