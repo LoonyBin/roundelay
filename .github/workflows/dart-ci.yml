@@ -59,6 +59,14 @@ jobs:
       - name: Check formatting
         run: dart format --output=none --set-exit-if-changed .
 
+      # No contributor on this fleet can run `dart format` locally — see the
+      # note at the top — so a formatting failure has to carry its own fix.
+      - name: Show the formatting diff
+        if: failure()
+        run: |
+          dart format .
+          git --no-pager diff
+
       # The vectors live at the repository root, two levels up. The tests read
       # them relative to the package directory, so the working directory above
       # is load-bearing rather than cosmetic.
