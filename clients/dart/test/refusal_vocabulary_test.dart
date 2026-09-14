@@ -84,11 +84,11 @@ void main() {
     // like a code would be surfaced verbatim by a client, putting a word into
     // that channel which the specification says does not exist.
     test('are never spelled like any code in the document', () {
-      final everyCodeInTheDocument = RegExp(r'^\|\s*`([a-z0-9_]+)`\s*\|',
-              multiLine: true)
-          .allMatches(doc)
-          .map((m) => m.group(1)!)
-          .toSet();
+      final everyCodeInTheDocument =
+          RegExp(r'^\|\s*`([a-z0-9_]+)`\s*\|', multiLine: true)
+              .allMatches(doc)
+              .map((m) => m.group(1)!)
+              .toSet();
       expect(everyCodeInTheDocument.length, greaterThan(clientCodes.length),
           reason: 'the document carries server codes too, or the regex is '
               'matching nothing useful');
@@ -125,8 +125,10 @@ void main() {
     });
 
     test('control_type_not_served is the reader\'s, not the server\'s', () {
-      expect(doc, contains('`control_type_not_served` vs '
-          '`unsupported_control_type`'));
+      expect(
+          doc,
+          contains('`control_type_not_served` vs '
+              '`unsupported_control_type`'));
       expect(
         Refusal.controlTypeNotServed.vocabularyCode,
         'control_type_not_served',

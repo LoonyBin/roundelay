@@ -67,8 +67,8 @@ void main() {
       test('$label: the epk is the ephemeral private key\'s own public key',
           () async {
         expect(
-          hexEncode(await x25519Public(b64(m['ephemeral_private_key_b64']
-              as String))),
+          hexEncode(await x25519Public(
+              b64(m['ephemeral_private_key_b64'] as String))),
           hexEncode(b64(m['ephemeral_public_key_b64'] as String)),
         );
       });
@@ -105,8 +105,8 @@ void main() {
           nonce: b64(m['nonce_b64'] as String),
         );
         expect(hexEncode(got.wrap), hexEncode(b64(m['wrap_b64'] as String)));
-        expect(hexEncode(got.kexKeyId), hexEncode(b64(m['kex_key_id_b64']
-            as String)));
+        expect(hexEncode(got.kexKeyId),
+            hexEncode(b64(m['kex_key_id_b64'] as String)));
         expect(hexEncode(got.ephemeralPublicKey),
             hexEncode(b64(m['ephemeral_public_key_b64'] as String)));
         expect(hexEncode(got.nonce), hexEncode(b64(m['nonce_b64'] as String)));
@@ -373,8 +373,8 @@ void main() {
 
   group('keyplane.json — the sort key, on a set built to expose it', () {
     final o = v['keywrap_digest_ordering'] as Map<String, dynamic>;
-    final entries =
-        (o['entries_in_correct_sort_order'] as List).cast<Map<String, dynamic>>();
+    final entries = (o['entries_in_correct_sort_order'] as List)
+        .cast<Map<String, dynamic>>();
     final byLabel = <String, MemberWrap>{
       for (final e in entries) e['label'] as String: _wrapOf(e),
     };
@@ -387,7 +387,10 @@ void main() {
 
     test('the vector is not vacuous: the wrong orders really are different',
         () {
-      for (final name in ['base64_spelling_wrong', 'signed_64bit_halves_wrong']) {
+      for (final name in [
+        'base64_spelling_wrong',
+        'signed_64bit_halves_wrong'
+      ]) {
         expect(orderings[name], isNot(correct),
             reason: '$name must disagree with the correct order, or this '
                 'vector proves nothing');
@@ -401,8 +404,7 @@ void main() {
               .map((w) => '${hexEncode(w.memberId)}/${hexEncode(w.kexKeyId)}')
               .toList(),
           correct
-              .map((l) =>
-                  '${hexEncode(byLabel[l]!.memberId)}/'
+              .map((l) => '${hexEncode(byLabel[l]!.memberId)}/'
                   '${hexEncode(byLabel[l]!.kexKeyId)}')
               .toList(),
         );
@@ -501,9 +503,8 @@ void main() {
         () {
       final p = plane();
       final published = members.map(_wrapOf).toList();
-      final committed =
-          hexDecode((v['keywrap_digest'] as Map<String, dynamic>)['digest_hex']
-              as String);
+      final committed = hexDecode((v['keywrap_digest']
+          as Map<String, dynamic>)['digest_hex'] as String);
 
       // The good set passes.
       p.checkWrapSet(
@@ -554,8 +555,8 @@ void main() {
         'read'));
 
     test('what was sealed comes back', () async {
-      final sealed =
-          await plane.sealBody(header: header, paddedBody: padded, epoch: epoch);
+      final sealed = await plane.sealBody(
+          header: header, paddedBody: padded, epoch: epoch);
       expect(sealed.length, padded.length + tagLen);
       final opened = await plane.openBody(
           header: header, sealedBody: sealed, epoch: epoch);
@@ -565,8 +566,8 @@ void main() {
     });
 
     test('a single changed header byte and the body no longer opens', () async {
-      final sealed =
-          await plane.sealBody(header: header, paddedBody: padded, epoch: epoch);
+      final sealed = await plane.sealBody(
+          header: header, paddedBody: padded, epoch: epoch);
       for (final at in [0, 1, 18, 21, 134, headerLen - 1]) {
         final tampered = Uint8List.fromList(header);
         tampered[at] ^= 0x01;
@@ -579,10 +580,11 @@ void main() {
       }
     });
 
-    test('an epoch this device holds no key for is an AEAD failure, not a crash',
+    test(
+        'an epoch this device holds no key for is an AEAD failure, not a crash',
         () async {
-      final sealed =
-          await plane.sealBody(header: header, paddedBody: padded, epoch: epoch);
+      final sealed = await plane.sealBody(
+          header: header, paddedBody: padded, epoch: epoch);
       await expectLater(
         plane.openBody(header: header, sealedBody: sealed, epoch: epoch + 9),
         throwsA(isA<RefusedException>()
@@ -617,8 +619,8 @@ void main() {
       expect(
         () => p.checkNotADowngrade(
             opClass: classContent, suite: suiteNone, atSeq: 51),
-        throwsA(isA<RefusedException>().having((x) => x.refusal, 'refusal',
-            Refusal.plaintextAtEncryptedEpoch)),
+        throwsA(isA<RefusedException>().having(
+            (x) => x.refusal, 'refusal', Refusal.plaintextAtEncryptedEpoch)),
       );
     });
 
@@ -633,8 +635,8 @@ void main() {
         expect(
           () => p.checkNotADowngrade(
               opClass: classContent, suite: suiteNone, atSeq: seq),
-          throwsA(isA<RefusedException>().having((x) => x.refusal, 'refusal',
-              Refusal.plaintextAtEncryptedEpoch)),
+          throwsA(isA<RefusedException>().having(
+              (x) => x.refusal, 'refusal', Refusal.plaintextAtEncryptedEpoch)),
         );
       }
     });
