@@ -29,12 +29,12 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: check out the spec
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: spec
 
       - name: check out the lint
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: dev
           path: tool
