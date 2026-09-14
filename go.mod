@@ -4,7 +4,7 @@ go 1.26.5
 
 require (
 	github.com/coder/websocket v1.8.15
-	github.com/jackc/pgx/v5 v5.10.0
+	github.com/jackc/pgx/v5 v5.11.0
 	golang.org/x/crypto v0.54.0
 	gopkg.in/yaml.v3 v3.0.1
 )
