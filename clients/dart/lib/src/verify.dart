@@ -11,51 +11,13 @@ library;
 import 'dart:typed_data';
 
 import 'crypto.dart' as crypto;
+import 'refusal.dart';
 import 'wire.dart';
 
-/// Why a client refused an envelope.
-///
-/// These are the client's own codes. They are not in
-/// `docs/reference/refusal-codes.md`, which enumerates what a *server* returns
-/// over HTTP — a server never returns `bad_signature` because a server never
-/// checks one.
-enum Refusal {
-  /// Fewer bytes than the v1 geometry admits, or a body that is not a legal
-  /// size class.
-  malformedEnvelope('malformed_envelope'),
+export 'refusal.dart' show Refusal, RefusedException;
 
-  /// The header names an `author_key_id` the client holds no public key for.
-  /// Refusing is the whole point: an unknown key is not a trusted key.
-  unknownKey('unknown_key'),
-
-  /// The signature does not verify over `framed(domain, header || body)`.
-  badSignature('bad_signature'),
-
-  /// `prev_author_hash` does not match the client's own verified head for this
-  /// author. `CONF-CLI-002`.
-  brokenAuthorChain('broken_author_chain');
-
-  const Refusal(this.code);
-
-  /// The wire spelling, as `conformance/checklist.yaml` writes it.
-  final String code;
-
-  @override
-  String toString() => code;
-}
-
-/// Thrown when a client refuses an envelope. Carries the reason unchanged so a
-/// caller can distinguish "I do not know this key" from "this is a forgery".
-class RefusedException implements Exception {
-  const RefusedException(this.refusal, [this.detail]);
-
-  final Refusal refusal;
-  final String? detail;
-
-  @override
-  String toString() =>
-      'RefusedException(${refusal.code}${detail == null ? '' : ': $detail'})';
-}
+/// The suites this client serves. v1 defines exactly two.
+const Set<int> defaultServedSuites = {suiteNone, suiteEncrypted};
 
 /// The public keys a client trusts, indexed the way the header addresses them.
 ///
@@ -64,6 +26,12 @@ class RefusedException implements Exception {
 /// [add] therefore re-derives the id rather than believing a supplied one, and
 /// verification still has to check the signature against the key the id
 /// resolves to.
+///
+/// This is the flat, positionless form — the right shape for a reader that has
+/// no log to place a key in. A reader that *does* have one owes more than this:
+/// `author_key_id` must resolve to the key in force for that Member at the op's
+/// **own position**, which is `CONF-CLI-004` and `CONF-CLI-026`, and needs the
+/// registration and every `member_amend` to answer.
 class KeyRing {
   final Map<String, Uint8List> _byKeyId = {};
 
@@ -81,8 +49,42 @@ class KeyRing {
   int get length => _byKeyId.length;
 }
 
-String _hex(List<int> b) =>
-    b.map((x) => x.toRadixString(16).padLeft(2, '0')).join();
+/// Decide whether this client serves the envelope's suite, reading **only** the
+/// two selector bytes.
+///
+/// `CONF-CLI-028`. The body geometry and the signature length are the suite's,
+/// so an envelope at an unknown suite has no trustworthy structure beyond byte
+/// 1: a client that computed a body boundary, an envelope hash or a signature
+/// verdict for one would be computing them from offsets it has no grounds to
+/// believe in.
+///
+/// Which is why this takes the raw bytes and looks at two of them. It reaches a
+/// verdict on a two-byte input, and that is the observable form of the
+/// requirement — an implementation that peeked further could not.
+///
+/// The other half of the requirement is that such an envelope is **kept**, not
+/// discarded. That part is structural here: nothing in this library mutates or
+/// drops the caller's bytes, so the envelope a caller refused is still the
+/// envelope it holds. A future suite is a future reader's to open.
+void checkSuiteServed(
+  List<int> raw, {
+  Set<int> servedSuites = defaultServedSuites,
+}) {
+  if (raw.length < 2) {
+    throw const RefusedException(
+      Refusal.malformedEnvelope,
+      'fewer than the two selector bytes',
+    );
+  }
+  final suite = raw[1];
+  if (!servedSuites.contains(suite)) {
+    throw RefusedException(
+      Refusal.suiteNotServed,
+      'suite 0x${suite.toRadixString(16).padLeft(2, '0')} is not served here; '
+      'the bytes are kept, not discarded',
+    );
+  }
+}
 
 /// Verify one pulled envelope, and refuse on any failure.
 ///
@@ -101,7 +103,12 @@ Future<Envelope> verifyEnvelope(
   required String namespace,
   String extName = '',
   Ladder ladder = const Ladder(),
+  Set<int> servedSuites = defaultServedSuites,
 }) async {
+  // The suite gate comes first, on two bytes, before any other offset is
+  // trusted. See [checkSuiteServed].
+  checkSuiteServed(raw, servedSuites: servedSuites);
+
   final Envelope env;
   try {
     env = parseEnvelope(raw);
@@ -124,10 +131,21 @@ Future<Envelope> verifyEnvelope(
     );
   }
 
+  checkSuiteInvariants(env.header);
+
+  // `observed_head` has exactly one legal value in v1, and the server judges
+  // it no more than it judges the nonce. CONF-CLI-003.
+  if (!_allZero(env.header.observedHead)) {
+    throw const RefusedException(
+      Refusal.illegalFieldValue,
+      'observed_head is zero in v1',
+    );
+  }
+
   final publicKey = keys.lookup(env.header.authorKeyId);
   if (publicKey == null) {
     throw RefusedException(
-      Refusal.unknownKey,
+      Refusal.untrustedKey,
       'no trusted key for author_key_id ${_hex(env.header.authorKeyId)}',
     );
   }
@@ -143,3 +161,37 @@ Future<Envelope> verifyEnvelope(
   }
   return env;
 }
+
+/// The fields that have exactly one legal value at suite `0x00`.
+///
+/// `CONF-CLI-023`. An unsealed envelope carries a zero `nonce` and a zero
+/// `key_epoch` — there is nothing for either to mean without a sealed body —
+/// **and the server judges neither**. So a non-zero one reaches a client
+/// unchallenged, which makes this the client's to refuse or nobody's.
+///
+/// Worth being precise about why it matters rather than treating it as
+/// tidiness: two unused fields a writer may fill freely, in a log every reader
+/// sees identically, is a covert channel — the same objection the padding check
+/// answers, in the header instead of the body.
+void checkSuiteInvariants(Header header) {
+  if (header.suite != suiteNone) return;
+  if (header.keyEpoch != 0) {
+    throw RefusedException(
+      Refusal.illegalFieldValue,
+      'key_epoch is ${header.keyEpoch} on an unsealed op, and 0 is its only '
+      'legal value at suite 0x00',
+    );
+  }
+  if (!_allZero(header.nonce)) {
+    throw const RefusedException(
+      Refusal.illegalFieldValue,
+      'a non-zero nonce on an unsealed op: nothing uses it, so a writer free '
+      'to fill it has a covert channel',
+    );
+  }
+}
+
+bool _allZero(List<int> b) => b.every((x) => x == 0);
+
+String _hex(List<int> b) =>
+    b.map((x) => x.toRadixString(16).padLeft(2, '0')).join();

@@ -423,7 +423,7 @@ void main() {
         () => verifyEnvelope(base64.decode(e['envelope_b64'] as String),
             keys: KeyRing(), namespace: 'acme'),
         throwsA(isA<RefusedException>()
-            .having((x) => x.refusal, 'refusal', Refusal.unknownKey)),
+            .having((x) => x.refusal, 'refusal', Refusal.untrustedKey)),
       );
     });
 

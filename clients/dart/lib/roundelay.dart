@@ -11,6 +11,19 @@
 /// server's own test corpus.
 library;
 
+export 'src/authority.dart'
+    show
+        CertificateDocument,
+        FoundingCeremony,
+        RootEpoch,
+        RootTimeline,
+        VaultRecord,
+        checkVaultRootMatchesRecovered,
+        verifyAuthChallenge,
+        verifyCertificate,
+        verifyCertificateAtPosition,
+        verifyVaultRecord,
+        vaultSigningInput;
 export 'src/crypto.dart'
     show
         ed25519Public,
@@ -18,9 +31,38 @@ export 'src/crypto.dart'
         framed,
         keyId,
         payloadHash,
+        sha256,
         sign,
         uuid8,
         verify;
+export 'src/keyplane.dart'
+    show
+        MemberWrap,
+        Rotation,
+        WorkspaceKeyPlane,
+        WrapTarget,
+        deriveWrapKey,
+        epochKeyLen,
+        escrowWrapInfo,
+        escrowWrapLen,
+        hkdfSalt,
+        keywrapDigest,
+        memberWrapInfo,
+        memberWrapLen,
+        mintEscrowWrap,
+        mintMemberWrap,
+        openEscrowWrap,
+        openMemberWrap,
+        sortWrapSet,
+        wrapNonceLen,
+        x25519,
+        x25519Public;
+export 'src/refusal.dart' show Refusal, RefusedException;
 export 'src/verify.dart'
-    show KeyRing, Refusal, RefusedException, verifyEnvelope;
+    show
+        KeyRing,
+        checkSuiteInvariants,
+        checkSuiteServed,
+        defaultServedSuites,
+        verifyEnvelope;
 export 'src/wire.dart';

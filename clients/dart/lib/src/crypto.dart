@@ -49,6 +49,16 @@ Uint8List payloadHash(List<int> payload) => _sha256(payload);
 Uint8List keyId(List<int> publicKey) =>
     Uint8List.sublistView(_sha256(publicKey), 0, 8);
 
+/// Bare SHA-256, for the constructions that hash something which is neither an
+/// envelope nor a control payload — the per-wrap and per-escrow-wrap hashes
+/// inside `keywrap_digest`, for instance.
+///
+/// Named plainly on purpose. [envelopeHash] and [payloadHash] are the same
+/// function, and they exist as separate names because each identifies one
+/// specific thing; borrowing one of them for a third purpose would make a call
+/// site read as a claim about its input that is not true.
+Uint8List sha256(List<int> data) => _sha256(data);
+
 Uint8List _sha256(List<int> data) =>
     Uint8List.fromList(c.sha256.convert(data).bytes);
 
