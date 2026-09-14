@@ -140,7 +140,6 @@ class RefusedException implements Exception {
   final String? detail;
 
   @override
-  String toString() =>
-      'RefusedException(${refusal.label}'
+  String toString() => 'RefusedException(${refusal.label}'
       '${detail == null ? '' : ': $detail'})';
 }

@@ -54,3 +54,14 @@ String hexEncode(List<int> b) =>
 
 /// The 16 raw bytes of a UUID's canonical text — never a textual spelling.
 Uint8List uuidBytes(String text) => hexDecode(text.replaceAll('-', ''));
+
+/// A copy of [bytes] with the low bit at [at] flipped.
+///
+/// One bit is the smallest difference the corpus can be tampered by, which is
+/// what makes a refusal informative: a test that fed rubbish would only prove
+/// the library rejects rubbish.
+Uint8List flipBit(List<int> bytes, int at) {
+  final out = Uint8List.fromList(bytes);
+  out[at] ^= 0x01;
+  return out;
+}
