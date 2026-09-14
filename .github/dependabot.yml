@@ -1,0 +1,30 @@
+version: 2
+updates:
+  # main — the spec and conformance branch. The only dependencies here are
+  # the action pins in .github/workflows/spec.yml; there are no package
+  # manifests on this branch.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+
+  # dev — the Go reference implementation. Dependabot only watches the
+  # default branch unless an entry names target-branch, so dev needs its
+  # own entries. Note that target-branch entries receive scheduled version
+  # updates only: Dependabot raises security updates against the default
+  # branch alone. When dev merges to main these two can collapse into the
+  # entries above and security updates come with them.
+  - package-ecosystem: github-actions
+    directory: "/"
+    target-branch: dev
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+
+  - package-ecosystem: gomod
+    directory: "/"
+    target-branch: dev
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
