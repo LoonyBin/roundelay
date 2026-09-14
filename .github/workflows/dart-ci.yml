@@ -1,0 +1,74 @@
+name: Dart client CI
+
+# The reference client library is analysed and tested here and nowhere else.
+# No machine in this fleet can run a Dart VM: the aarch64 hosts have no Flutter
+# or Dart release at all, and the x86_64 macOS host's SDK refuses to start
+# ("Current Mac OS X version 12.0 is lower than minimum supported version
+# 14.0") — a floor compiled into the binary, which `dart --version` does not
+# trip because it answers before the VM initialises. So this workflow is the
+# verification path for `clients/dart/`, not a convenience on top of one.
+#
+# Scoped to the Dart package and the vectors it checks itself against. A change
+# to `vectors/` is a change to the protocol, so it must re-run these tests: a
+# corpus the client no longer agrees with is the failure this is here to catch.
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - "clients/dart/**"
+      - "vectors/**"
+      - ".github/workflows/dart-ci.yml"
+  pull_request:
+    paths:
+      - "clients/dart/**"
+      - "vectors/**"
+      - ".github/workflows/dart-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  analyze-and-test:
+    name: Analyze & Test
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: clients/dart
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: dart --version
+        run: dart --version
+
+      - name: Resolve dependencies
+        run: dart pub get
+
+      - name: Analyze
+        run: dart analyze --fatal-infos
+
+      - name: Check formatting
+        run: dart format --output=none --set-exit-if-changed .
+
+      # No contributor on this fleet can run `dart format` locally — see the
+      # note at the top — so a formatting failure has to carry its own fix.
+      - name: Show the formatting diff
+        if: failure()
+        run: |
+          dart format .
+          git --no-pager diff
+
+      # The vectors live at the repository root, two levels up. The tests read
+      # them relative to the package directory, so the working directory above
+      # is load-bearing rather than cosmetic.
+      - name: Test against the frozen vectors
+        run: dart test --reporter expanded

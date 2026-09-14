@@ -1,0 +1,6 @@
+# The lockfile is not committed: this is a library, not an application, so it
+# resolves against its published constraints the way a consumer would.
+.dart_tool/
+.packages
+pubspec.lock
+build/
