@@ -39,7 +39,7 @@ jobs:
           ref: dev
           path: tool
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: tool/go.mod
           cache-dependency-path: tool/go.sum
