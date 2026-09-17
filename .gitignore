@@ -1,3 +1,18 @@
 __pycache__/
 .pytest_cache/
 build/
+
+# The specification, fetched from `main` by scripts/spec-sync.sh. Not this
+# branch's to carry — see spec.lock. Listed file by file rather than as
+# `docs/` so that a document this branch does write is not silently ignored.
+/conformance/checklist.yaml
+/docs/01-the-log.md
+/docs/02-identity.md
+/docs/03-authority.md
+/docs/04-keys.md
+/docs/05-compatibility.md
+/docs/README.md
+/docs/reference/glossary.md
+/docs/reference/profile-obligations.md
+/docs/reference/refusal-codes.md
+/docs/reference/retained-state.md

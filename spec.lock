@@ -1,0 +1,41 @@
+# Where the specification comes from.
+#
+# This branch does not carry the specification. It carries an implementation of
+# one, and the document it implements lives on `main`. `scripts/spec-sync.sh`
+# reads this file and materialises those files into the working tree, where
+# they are ignored by git — see .gitignore.
+#
+# It used to carry both, and they drifted: `main` described 194 conformance
+# items and 117 refusal codes while everything here was verified against a
+# private copy describing 250 and 125. Every green result on this branch was a
+# fact about that copy. This file is what stops that happening twice.
+#
+# `ref` is a branch, not a commit, deliberately. A commit pin is reproducible
+# but it goes stale silently, which is the failure this is here to prevent: a
+# pin nobody advances is a fork with extra steps. Tracking the branch means a
+# spec change that this implementation does not satisfy turns CI red here,
+# which is the whole point of not maintaining a second copy.
+#
+# For reproducing an old run, override without editing this file:
+#
+#     ROUNDELAY_SPEC_REF=<commit> make spec
+#
+# `files` is the complete list. The sync fails if any of them is missing from
+# `ref` rather than leaving a partial tree, because a half-synced spec fails as
+# a file-not-found somewhere far away from the cause.
+
+repo https://github.com/LoonyBin/roundelay
+ref main
+
+files
+  conformance/checklist.yaml
+  docs/01-the-log.md
+  docs/02-identity.md
+  docs/03-authority.md
+  docs/04-keys.md
+  docs/05-compatibility.md
+  docs/README.md
+  docs/reference/glossary.md
+  docs/reference/profile-obligations.md
+  docs/reference/refusal-codes.md
+  docs/reference/retained-state.md

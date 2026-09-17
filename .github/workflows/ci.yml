@@ -3,6 +3,12 @@ name: CI
 # `make check` is the pipeline a conforming release runs. Until this file
 # existed nothing ran it, so every green result was a fact about one afternoon
 # rather than a maintained property.
+#
+# Both jobs fetch the specification before they run anything. It lives on
+# `main` and is not committed to this branch — see spec.lock — so without that
+# step the lint has nothing to read and the refusal vocabulary has nothing to
+# be generated from. Fetching it per run, rather than pinning a copy, is what
+# makes a green result here a statement about the spec as it stands today.
 
 on:
   push:
@@ -24,6 +30,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+
+      - name: fetch the spec from main
+        run: make spec
 
       # go-version-file, not a literal: `make check` gates on `gofmt -l`, and
       # gofmt's output changes between Go releases. Reading the version from
@@ -59,6 +68,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+
+      - name: fetch the spec from main
+        run: make spec
 
       - uses: actions/setup-go@v7
         with:
