@@ -44,18 +44,19 @@ jobs:
           go-version-file: tool/go.mod
           cache-dependency-path: tool/go.sum
 
-      # Three of the five lints, deliberately.
+      # All five lints. Until LOO-24 this ran three of them, because `coverage`
+      # and `bindings` do not decide this checklist against itself — they decide
+      # it against `dev`'s compiled refusal vocabulary and against `dev`'s
+      # collected tests, and while the two branches carried different specs
+      # those two were guaranteed red about the divergence rather than about the
+      # document. `dev` now consumes this branch's spec instead of maintaining
+      # its own, so there is one checklist, and all five are answerable.
       #
-      # `coverage` and `bindings` do not decide this checklist against itself —
-      # they decide it against `dev`'s compiled refusal vocabulary and against
-      # `dev`'s collected tests. While the two branches carry different specs
-      # (194 items here, 250 there) those two are guaranteed red, and they are
-      # red about the spec divergence, which is LOO-24's subject, not CI's.
-      # When LOO-24 lands and `dev` consumes this branch's spec rather than
-      # maintaining its own, drop the flag and run all five.
+      # That makes this job the place the divergence would reappear: if someone
+      # edits the spec here without the implementation following, `coverage` and
+      # `bindings` go red here, on the commit that caused it.
       - name: conformance lint
         working-directory: tool
         run: |
           go run ./internal/conformance/cmd/conformance-lint \
-            -lints=structure,vocabulary,observability \
             ../spec/conformance/checklist.yaml

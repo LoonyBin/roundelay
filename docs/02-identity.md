@@ -35,9 +35,9 @@ write is [Authority](03-authority.md).
 ```
 
 **Root is the identity.** There is no account record, no user id, and no third
-party that says who you are. A Workspace's id is derived from Root's public key
-([Authority](03-authority.md)), so the identity and the data it owns are bound by
-arithmetic rather than by a lookup.
+party that says who you are. A Workspace's id is bound at genesis to the Root that
+founded it ([Authority](03-authority.md)), so the identity and the data it owns are
+tied at creation rather than by a lookup.
 
 **Root is not a credential.** It authenticates nothing and appears in no
 `Authorization` header. It signs certificates, and those certificates are what the
@@ -67,7 +67,7 @@ are not sessions at all.
 |---|---|
 | `GET /v1/vault/{locator}` | **nothing.** Knowing the locator is the claim |
 | `PUT /v1/vault/{locator}` | a **Root signature** inside the body |
-| `POST /v1/members` | a **Root-signed certificate** inside the body |
+| `POST /v1/members` | a certificate signed under **root authority**, inside the body |
 | `POST /v1/members/{m}/challenge` | nothing |
 | `POST /v1/members/{m}/token` | a **device signature** over the challenge |
 | `POST /v1/members/{m}/token/refresh` | the refresh token |
@@ -97,6 +97,18 @@ would answer is never asked.
 - **stored irreversibly** — a server MUST NOT be able to reconstruct a live refresh
   token from its own storage.
 
+**[S]** **Two** events revoke them, and both are facts in the log: a device **losing
+its last live grant** in a Workspace, and a `member_amend` of that device's **control**
+key ([Authority §11](03-authority.md#11-what-a-control-op-causes)). Each kills every
+refresh token scoped to that device, and closes every live signal socket it holds in
+the Workspace where the op landed with `4403`
+([The Log](01-the-log.md#10-being-told-there-is-news-ws-v1wworkspace_idsignal)).
+
+> The second is the first's cascade minus the grant half, and it is there for the same
+> reason the first is: the challenge below is signed by the control key, so a token the
+> retired key already obtained would outlive the retirement — and outlive it
+> everywhere, because a token is scoped to a device rather than to a Workspace.
+
 **[S]** A credential failure is `401 invalid_credential`, carrying
 `WWW-Authenticate: Bearer`.
 
@@ -125,10 +137,13 @@ nothing else does:
                                       credential is needed.
 ```
 
-> A device joining an account it already owns proves that by construction: it holds
-> Root because it just opened the vault, and the Workspace is already in the log.
-> Making it ask an operator for permission to add a laptop would put a human in the
-> middle of the one flow this design exists to make automatic.
+> A device joining a Workspace that already exists proves it by construction: it
+> carries a certificate that Workspace's own root authority signed — Root itself,
+> straight out of the vault, or a live delegate an administrator holds
+> ([Authority §6](03-authority.md#6-delegation-keeping-root-cold)) — and the Workspace
+> is already in the log. Making it ask an operator for permission to add a laptop
+> would put a human in the middle of the one flow this design exists to make
+> automatic.
 >
 > The discriminator is free because the founder was always going to present its
 > genesis certificate here — [Authority](03-authority.md) embeds the founder's key
@@ -242,8 +257,8 @@ its signing key.
 ```
    device                                          server
      │                                               │
-     │  ── 1. POST /v1/members ──────────────────►   │   a Root-signed
-     │      { keys, registration certificate }       │   certificate
+     │  ── 1. POST /v1/members ──────────────────►   │   a certificate signed
+     │      { keys, registration certificate }       │   under root authority
      │  ◄─── 201 { …, chained: false } ──────────    │   a shell. no authority.
      │                                               │
      │  ── 2. POST /v1/members/{m}/challenge ────►   │   no credential at all
@@ -258,28 +273,32 @@ its signing key.
      │      now it can write ops ── The Log          │
 ```
 
-Step 1 needs Root. Steps 2 and 3 need only the device's own key.
+Step 1 needs a certificate signed under root authority. Steps 2 and 3 need only the
+device's own key.
 
 > Which is why a device keeps working for years after the ceremony that created it.
 > Root is required to *introduce* a device and never to operate one.
 
 ### `POST /v1/members` — register the device's public keys
 
-**Credential:** the Root-signed registration certificate in the body. There is no
-session to present.
+**Credential:** the registration certificate in the body, signed under root authority.
+There is no session to present.
 
 ```json
 → {"member_id": "<uuid>",
    "control_pk": "<b64 32B>",    // Ed25519 — server-read classes, and the challenge
    "content_pk": "<b64 32B>",    // Ed25519 — opaque classes
    "kex_pk":     "<b64 32B>",    // X25519  — receives sealed keys
-   "key_ids":    { … },          // optional; must equal the derivations if sent
+   "key_ids": {"control_key_id": "<b64 8B>",   // optional as a whole;
+               "content_key_id": "<b64 8B>",   //   must equal the derivations
+               "kex_key_id":     "<b64 8B>"},  //   if sent
    "cert_b64":  "<b64>",         // member_register OR workspace_genesis
-   "cert_sig_b64": "<b64 64B>",  // Root's signature over it
-   "root_pk_b64":  "<b64 32B>"}  // the Root that signed
+   "cert_sig_b64": "<b64 64B>",  // the signing authority's signature over it
+   "root_pk_b64":  "<b64 32B>"}  // which Workspace's authority signed
 
 ← {"member_id": "…", "control_pk": "…", "content_pk": "…", "kex_pk": "…",
-   "key_ids": { … }, "chained": false}
+   "key_ids": {"control_key_id": "…", "content_key_id": "…", "kex_key_id": "…"},
+   "chained": false}
 ```
 
 **[S]** `201` on create; **`200` on an identical repeat**, with the same body.
@@ -287,32 +306,145 @@ session to present.
 **[S]** Checks, in order:
 
 ```
-   1. the certificate parses, and names this member_id and all three keys
-   2. both key ids derive from the keys beside them
-   3. root_pk DERIVES the Workspace the certificate names
-   4. the signature verifies under root_pk
-   5. by certificate type:                                      ◄── the gate, §3
+   1. the request's own shape: three 32-byte keys, a 32-byte root_pk,
+        and each claimed key id 8 bytes, derived from the key it names
+   2. the certificate parses, with the closed key set for its type
+   3. by certificate type:                                      ◄── creation
+        workspace_genesis  →  creatable(root_pk, workspace_id)
+        member_register    →  nothing; reachability is step 6
+   4. the signature verifies under root authority:               ◄── §6 of Authority
+        workspace_genesis  →  the carried root_pk, and nothing else
+        member_register    →  the carried root_pk, then each delegation
+                              live in the Workspace the certificate names
+   5. the certificate's contents: it names this member_id, it names
+        these three keys, and its member_kind is one the profile serves
+   6. by certificate type:                                      ◄── the gate, §3
         workspace_genesis  →  admission
         member_register    →  that Workspace exists, with root_pk as current Root
 ```
 
-**[S]** Step 3 is the derivation of [Authority](03-authority.md), evaluated directly.
-A `root_pk` that does not derive the certificate's Workspace is
-`403 workspace_not_reachable`.
+> Steps 1 and 2 are **shape**, and step 5 is **values** — which is why the
+> certificate's own claims wait below the signature, exactly as they do in
+> [Authority §10](03-authority.md#10-stage-4--verifying-control-ops). Whether this
+> document names your device is a question about what it says, and asking it of
+> bytes that have not verified decides something on a forgery's word. Step 1 is not
+> that: it reads the request, not the certificate.
 
-**[S]** Steps 1–4 consult **no stored state at all**, which is what lets the founding
-branch run before any Workspace exists — as it must, since a device registers its
-keys before it can author the genesis that creates one. Only step 5's joining branch
-reads the store, and only in the case where the Workspace is already there to read.
+**[S]** Step 3 is the **creation** question of [Authority
+§3.1](03-authority.md#31-creation), evaluated directly and on the founding branch
+only. A `root_pk` the profile's predicate will not let create the id its certificate
+names is `403 workspace_not_reachable`.
 
-> There is no pinning step and no trust-on-first-use window here. A Root either
-> derives the Workspace it claims or it does not, and the answer is the same on
-> every server, at every moment.
+**[S]** Under `derived` that predicate is arithmetic and nothing else — the id the
+certificate names is **one of** the ids the profile's ordered frozen namespaces
+compute from `root_pk`. Under `explicit` it is the profile's own predicate, and may
+consult the profile's own assignment state.
+
+> Step 3 runs before step 4, so an unverified certificate can ask the question. Under
+> `derived` that discloses nothing anyone could not compute offline. Under `explicit`
+> it is a probe: `workspace_not_reachable` and `bad_root_signature` are distinct
+> codes, so an unadmitted caller can walk ids past a `root_pk` it does not hold and
+> learn which ones the profile has assigned. Verifying first would close it. The
+> order stays because it is not this route's to choose — [Authority
+> §10](03-authority.md#10-stage-4--verifying-control-ops) checks reachability before
+> the signature on a genesis op, and one certificate must answer the same way at both
+> doors. A deployment that minds the probe refuses the caller at its front door,
+> which is where [§3](#3-admission) already puts the mechanism.
+
+**[S]** A `member_register` certificate faces **no derivation check**. Its
+reachability is what step 6 already asks — the Workspace exists, with this `root_pk`
+as its **current** Root — refused `409 workspace_not_created` or
+`422 cert_root_pk_mismatch`.
+
+> Which is the only form of the question that survives a handover. After a
+> `root_handover` the current Root is not the one the Workspace id was bound to at
+> genesis, and never will be — that binding names only the founding Root ([Authority
+> §2](03-authority.md#2-root-the-trust-anchor)) — so a Workspace that has used the
+> escape hatch answers reachability from materialised state rather than from the
+> founding binding. Asking step 3's question here would leave it unable to enrol
+> another device.
+
+**[S]** Step 4 is the **root-authority** check of [Authority
+§6](03-authority.md#6-delegation-keeping-root-cold), and the two branches differ only
+in what that authority contains here:
+
+- a `workspace_genesis` is **never delegable**, so the founding branch tries the
+  carried `root_pk` and nothing else;
+- a `member_register` **is** delegable, so the joining branch tries the carried
+  `root_pk`, then **each delegation live in the Workspace the certificate names**,
+  materialised from that Workspace's log as the route evaluates the request.
+
+**[S]** If none of them verifies, `422 bad_root_signature` — on either branch.
+
+**[S]** `root_pk_b64` is the claim of **which Workspace's authority signed**, not a
+claim that this key held the pen. It is still the key step 4 tries first, and step 6
+still requires it to be that Workspace's **current** Root — `422
+cert_root_pk_mismatch` otherwise, unchanged.
+
+> Which is what keeps a skewed device recoverable. A device that built its request
+> against a retired Root verifies at step 4 under the key it carried, and is then told
+> `cert_root_pk_mismatch` — *re-read the log and rebuild against the Root it reports*.
+> Dropping the carried key from step 4's set would answer `bad_root_signature`
+> instead — the code whose ordinary meaning is *forged, and no remedy*, softened
+> only by the one documented race (§6 of Authority: a delegation revoked between
+> the doors, whose remedy is a freshly issued certificate)
+> ([Authority §10](03-authority.md#root_handover)).
+
+**[S]** Where the named Workspace has no accepted genesis there are no delegations to
+try, so the certificate stands or falls on the carried `root_pk` alone and step 6
+answers `409 workspace_not_created`. A **delegate**-signed certificate naming such a
+Workspace is `bad_root_signature`, and that is the honest verdict: no delegation can
+be live in a log that does not exist, so those bytes were never going to be accepted
+anywhere.
+
+**[S]** The route's answer is a **snapshot**; the log's is **positional**. When the
+same certificate lands as a `member_register` op, [Authority
+§10](03-authority.md#10-stage-4--verifying-control-ops) verifies it again against the
+delegations live **at that op's position**, and that verdict — not this one — is the
+one the log keeps.
+
+> The two are asked in the only ways each door can ask. This route occupies no
+> position in any log: it runs before the op exists, and often before the Workspace
+> the device is joining has heard of the device at all. So it asks *live now*, and the
+> append path re-asks *live there*.
+>
+> Which opens exactly one skew case, and it is worth naming rather than leaving to be
+> discovered. A delegation revoked between the two evaluations leaves a **shell whose
+> op refuses**: the route accepted the certificate while the delegation was live, and
+> the append path refuses it `bad_root_signature` because it is not live where the op
+> lands. Nothing is damaged — a shell confers nothing, which is the whole of what a
+> shell is — and the remedy is a certificate from an authority that is still live: the
+> device presents it here again for the same keys, which answers `200`, and posts it
+> as its first op. The skew does not run the other way into anything worse: a
+> certificate this route refused never reaches the log at all.
+
+**[S]** Steps 1, 2 and 5 consult **no stored state at all**, and under `derived`
+neither does step 3. No step on the **founding** branch reads the **Workspace** store
+under either policy — step 4 there is the carried `root_pk` and nothing else — which
+is what lets that branch run before any Workspace exists, as it must, since a device
+registers its keys before it can author the genesis that creates one. On the joining
+branch two steps read it: step 4 for that Workspace's live delegations, step 6 for its
+existence and its current Root, and both only in the case where the Workspace is
+already there to read. An `explicit` creation predicate reads whatever the profile's
+own assignment state requires, which is the profile's business and not this route's.
+
+> There is no pinning step and no trust-on-first-use window on either branch. Under
+> `derived` a Root either derives the Workspace it claims or it does not, and the
+> answer is the same on every server, at every moment. On the joining branch the
+> Workspace is already in the log, and the log says which key is its Root now and
+> which keys hold its root authority now.
+>
+> Step 4's lookup is keyed by the **certificate's** `workspace_id`, which nothing has
+> verified when it runs. That is a lookup and not a judgement: it chooses candidate
+> keys and records nothing, exactly as step 3 does under `explicit`, and it discloses
+> nothing either — telling *tried the delegations* from *did not* would take a
+> signature under one of them, which is the thing the caller would have to hold
+> already.
 
 **[S]** **This confers no authority whatsoever.** The record is a **shell** until
 the same registration is accepted into the log as a control op
-([Authority](03-authority.md)). The certificate proves Root asked for this key; only
-the log makes it true.
+([Authority](03-authority.md)). The certificate proves this Workspace's root authority
+asked for this key; only the log makes it true.
 
 > Worth pausing on. The certificate at this route and the certificate in the log are
 > the same bytes checked twice, and that is deliberate: the server needs the key
@@ -325,15 +457,37 @@ device may address is answered by its accepted registrations
 ([Authority](03-authority.md)), one per Workspace.
 
 > A device does not have *a* certifying Root. In a shared Workspace it is registered
-> by that Workspace's Root, so a device joining two Workspaces owned by two identities
-> is certified by two different keys. Anything stored per device would be wrong for
-> one of them.
+> under that Workspace's own root authority, so a device joining two Workspaces owned
+> by two identities is certified by two different keys. Anything stored per device
+> would be wrong for one of them.
 
 **[S]** Every key id is **derived by the server** — the first 8 bytes of the key's
 SHA-256. A client's claim is cross-checked, never stored.
 
 > A key id indexes into a device's keys. Letting the client choose it would let one
 > key occupy another's slot.
+
+**[W]** `key_ids` is an object with **exactly three members**, named as the
+certificate names them ([Authority §5](03-authority.md#5-the-certificates)) — the
+standard-base64 of 8 bytes each:
+
+```json
+{"control_key_id": "<b64 8B>",
+ "content_key_id": "<b64 8B>",
+ "kex_key_id":     "<b64 8B>"}
+```
+
+**[S]** The object is optional **as a whole**, never member by member. Sent, all three
+MUST be present: a missing one is `422 malformed_request`, naming the path it left out.
+The set is closed, so an unrecognised member is `422 unknown_request_field` under the
+rule that closes every request body at any depth ([Compatibility
+§4](05-compatibility.md#4-unknown-fields-are-refused)), reported as `key_ids.<name>`
+like any other nested path.
+
+> Named rather than positional, and named after the certificate's own fields, because
+> this object and the certificate are checked against each other three times over: the
+> claim, the derivation, and the certificate's copy all have to agree, and a shape that
+> made *which id is which* implicit would let two of them agree by accident.
 
 **[S]** `chained` reports whether an accepted registration exists for this device in
 the log **anywhere**. It is a bootstrap hint that no verification reads. This is the
@@ -347,11 +501,11 @@ one place it is informative — it separates a shell from a registered device.
 | `422 key_id_not_derived_from_sign_pk` | the claim disagrees with the derivation |
 | `422 malformed_root_pk` | not 32 bytes |
 | `422 malformed_control_payload` | the certificate does not parse, or carries an unknown key |
+| `403 workspace_not_reachable` | `root_pk` may not create the id a `workspace_genesis` names |
+| `422 bad_root_signature` | neither the claimed Root nor any live delegation signed these certificate bytes |
 | `422 cert_member_mismatch` | the certificate names another device |
 | `422 cert_key_mismatch` | the certificate names another key |
 | `422 unknown_member_kind` | the certificate's kind is not in the profile's set |
-| `403 workspace_not_reachable` | `root_pk` does not derive the certificate's Workspace |
-| `422 bad_root_signature` | the claimed Root did not sign these certificate bytes |
 | `403 admission_refused` | a `workspace_genesis` certificate this caller may not present |
 | `409 workspace_not_created` | a `member_register` certificate for a Workspace that does not exist |
 | `422 cert_root_pk_mismatch` | that Workspace exists, but this is not its current Root |
@@ -359,20 +513,61 @@ one place it is informative — it separates a shell from a registered device.
 
 **[S]** The certificate refusals are the codes [Authority](03-authority.md) already
 defines for the same certificate arriving as an op. They are not narrowed or renamed
-here.
+here, and the five governed by the shape-and-values discipline ([Authority
+§5](03-authority.md#5-the-certificates)) fall on the same side of the signature
+check at both doors:
+
+```
+   above:  malformed_control_payload, workspace_not_reachable
+   below:  cert_member_mismatch, cert_key_mismatch, unknown_member_kind
+```
+
+**[S]** The claim covers those five and nothing else. `admission_refused` and
+`workspace_not_created` are step 6's **branch** refusals rather than certificate
+refusals, and `workspace_not_created` sits above the signature on the append path
+(first in [stage 4](03-authority.md#10-stage-4--verifying-control-ops)'s
+`member_register` sequence — stage 2 covers every class but control) and below it
+here. The joining branch's `cert_root_pk_mismatch` has no counterpart on the append
+path at all: an op carries **no `root_pk` claim of its own** — its Workspace comes from
+the path and its root authority from that Workspace's log — so there is no second value
+to disagree, and a certificate no live authority signed answers `bad_root_signature`
+there.
 
 > One certificate, one vocabulary. A device that meets `cert_key_mismatch` at this
 > route has learned exactly what it would have learned meeting it on the append
 > path, and the remedy is identical.
 
-**[S]** `member_id_already_registered` covers: the id exists with a different
-either signing key; with a stored `kex_pk` that differs from the one supplied; **and** with no
-stored `kex_pk` while one is supplied. A stored sealing key is never upgraded in
-place. Omitting `kex_pk` when one is stored is an identical repeat and answers `200`.
+**[S]** **All three keys are required on every registration**, founding and joining
+alike — step 1 admits no request that omits one. So no stored record can lack one, and
+no record ever acquires a key it was created without.
+
+> Which is the shape the rest of the design already assumes. A device with no sealing
+> key can be sent no wrap, so it would hold a registration in a Workspace and never
+> open a byte of it ([Keys](04-keys.md)). And a record that could gain a key later is a
+> record whose key set two servers can disagree about — one `member_id`, two answers,
+> decided by which requests each of them happened to see.
+
+**[S]** `member_id_already_registered` covers: the id exists with **either signing key
+different**, or with a **stored `kex_pk` that differs** from the one supplied. A stored
+key is never replaced in place.
 
 > The id is a client-chosen UUID, so this is an existence oracle over a namespace
 > the caller already controls. Two identities that pick the same UUID collide, and
 > the second one is told so rather than silently taking over the first one's record.
+
+This route registers a device's keys and never changes them. A change is a
+`member_amend` op, in the log of the Workspace it applies to ([Authority
+§10](03-authority.md#member_amend)).
+
+**[S]** A request repeating this `member_id` and these keys under a **different** valid
+certificate — a `member_register` for a second Workspace, say — is not a refusal: it
+answers `200` with the stored record. The certificate faces every check above and is
+then discarded. Only a key that disagrees with the stored one refuses.
+
+> The record holds keys, never certificates, so a second certificate has nothing to
+> conflict with. Where a registration is *recorded* is the log, and that is where the
+> second one goes ([Authority](03-authority.md)); this route only ever bought the
+> ordering. Refusing here would mean a device could enrol in exactly one Workspace.
 
 ### `POST /v1/members/{member_id}/challenge` — get a nonce
 
@@ -417,6 +612,21 @@ and covers the member id **and** the nonce, under a dedicated signing domain —
                             another device's pending challenge
 ```
 
+**[S]** *Which* control key is the one **in force in any Workspace this device is
+registered in** — the registration's, in every Workspace where no `member_amend` has
+landed against it, and the amendment's where one has
+([Authority](03-authority.md#member_amend)). A key amended away in **every** one of
+them stops obtaining tokens.
+
+> This route has no Workspace in its path and no position to be judged at, so it asks
+> the only question it can — the same shape as `POST /v1/members` above, and answered
+> from materialised state for the same reason.
+
+**[C]** Which prices the remedy honestly: a device rotating its control key **because
+that key was exposed** MUST amend in **every** Workspace it is registered in. Until it
+has, the retired key still buys a token somewhere — and that token speaks for the
+device everywhere, not only where the amend is missing.
+
 **[S]** **The challenge is spent by the attempt, win or lose** — and spent *before*
 either field is decoded.
 
@@ -444,6 +654,16 @@ either field is decoded.
 **[S]** `401 invalid_refresh_token` — unknown, revoked, expired, scoped to a
 different device, or naming a device that does not exist.
 
+**[C]** Logging out is **client-side**: the device deletes its token pair. There is no
+route that asks the server to, and the server-side cut is revocation — losing the last
+permission in a Workspace already kills every refresh token scoped to that device
+(§2, [Authority](03-authority.md)).
+
+> The omission is deliberate. A device that wants its own session gone deletes it; a
+> device that must be *cut off* is revoked, by whoever holds the authority to do it. A
+> half-measure between the two is a second revocation mechanism to keep in step with
+> the first, and they would disagree the first time either was extended.
+
 ---
 
 ## 5. Listing the devices in a Workspace
@@ -452,15 +672,23 @@ different device, or naming a device that does not exist.
 
 **Credential:** a device token, unrevoked.
 
+```
+  ?after=<member_id>     exclusive; default: from the start
+  &limit=500             1 … the advertised maximum
+```
+
 ```json
-← {"members": [{"member_id": "…", "holder_ref": "…",
+← {"members": [{"member_id": "…", "member_kind": "<token>", "holder_ref": "…",
                 "control_pk": "…", "content_pk": "…", "kex_pk": "…",
-                "key_ids": { … }}]}
+                "key_ids": {"control_key_id": "…", "content_key_id": "…",
+                            "kex_key_id": "…"}}],
+   "has_more": true}
 ```
 
 **[S]** **Scoped to the Workspace in the path**, in both senses — the path selects it
-and the result reflects it. A device appears **iff a Root-signed registration naming
-*this* Workspace has been accepted for it**, whatever identity holds it.
+and the result reflects it. A device appears **iff a registration naming *this*
+Workspace, signed under its root authority, has been accepted for it**, whatever
+identity holds it.
 
 ```
    Workspace W1
@@ -474,22 +702,79 @@ and the result reflects it. A device appears **iff a Root-signed registration na
 Workspace's devices by the identity holding them without asking anyone. Grouping is by
 **equality within this Workspace** and nothing more ([Authority](03-authority.md)).
 
+**[S]** Entries carry the registration's own `member_kind`, served as stored — the
+profile's token, neither interpreted nor re-checked here
+([Authority](03-authority.md#member-kinds)).
+
 **[S]** Ordered by raw `member_id` bytes ascending, so two implementations return the
 same page for the same state.
+
+**[S]** `after` is **exclusive**, and the comparison is on the **raw 16 bytes** of the
+member id, **as unsigned bytes**. The page begins at the first member whose id is
+strictly greater; omitted, it begins at the start. On the wire it is the canonical
+UUID of [the conventions](README.md).
+
+> The text is not the hazard: canonical lowercase UUID sorts exactly as the bytes do,
+> so a comparison on the served string agrees by construction. What diverges is a
+> **structured** comparison — a platform UUID type that compares as two signed 64-bit
+> halves reorders every id whose top bit is set, and one built from field-wise
+> integers reorders on each field boundary. Both are ordinary library behaviour and
+> neither is the ordering this route serves. Compare the bytes.
+
+**[S]** `after` is a **position, not a lookup.** A value naming no member of this
+Workspace is legal, and the page begins strictly above those bytes. It is refused only
+for being misshapen.
+
+> The cursor is the ordering, not the list. Every 16-byte value names a place in that
+> ordering whether a member sits there or not, so resolving one would be a check with
+> nothing behind it — and a route that refused an unrecognised cursor would owe a
+> client somewhere to go next.
+
+**[S]** `limit` runs 1 … `limits.max_page_size` and defaults to
+`limits.default_page_size`. Those are the **same two ceilings that govern
+`GET …/ops`** — [Compatibility §7](05-compatibility.md#7-discovery-the-health-endpoints)
+advertises one pair for every paged route, not one pair per route.
+
+**[S]** `has_more` is **exact**: true iff at least one further member exists after this
+page.
+
+**[S]** Exact **as of the page**, and no further: a walk holds no snapshot across
+pages. A member registered at bytes below a walk's cursor is in none of that walk's
+remaining pages, and nothing marks the walk stale — a caller that needs the list as of
+now starts a fresh walk.
+
+> The ordering is id bytes, and id bytes place a new member anywhere in it.
+> `GET …/ops` never meets this: a new op lands above every cursor ([The Log
+> §9](01-the-log.md#9-reading-get-v1wworkspace_idops)). No loss-proof walk is owed
+> here, and it would cost the server-side cursor this transport refuses to keep —
+> while the loss-proof feed already exists, because every registration is a control op
+> in the log, which is where anything that verifies learns the members anyway (below).
+
+**[S]** A `limit` outside range, or an `after` that is not a canonical UUID, is
+`422 malformed_request` — **never clamped**, on the same rule as [the log's own
+page](01-the-log.md#9-reading-get-v1wworkspace_idops).
+
+> Clamping would let a device built against a larger deployment silently receive short
+> pages and mistake one for the end of the list.
+
+**[S]** `after` and `limit` are the **only** parameters this route accepts. Any other
+is `422 unknown_request_field`, like an unrecognised parameter anywhere on the
+versioned surface ([Compatibility §4](05-compatibility.md#4-unknown-fields-are-refused)).
 
 **[S]** Entries carry **no `chained` flag** — presence in this list *is* the
 chaining.
 
 **[S]** A request against a Workspace that does not exist yet returns an **empty
-list**, never an error.
+list** with `has_more` false, never an error.
 
 > An enrolling device does not see itself until its own registration lands. That is
 > correct and consistent: a shell is a member of nothing.
 
 **[S]** This is a **bootstrap hint that no verification reads.** A device's key is
-learned from its own Root-signed registration in the log, so poisoning this list
-achieves nothing. The route exists because the server's own permission checks need
-the underlying index, and because device management is the obvious consumer.
+learned from its own registration in the log, signed under that Workspace's root
+authority, so poisoning this list achieves nothing. The route exists because the
+server's own permission checks need the underlying index, and because device
+management is the obvious consumer.
 
 | Refusal | Cause |
 |---|---|
@@ -500,11 +785,12 @@ the underlying index, and because device management is the obvious consumer.
 
 ## 6. Rate limits
 
-**[S]** Limits in this layer are **fixed-window**: the window opens at the first
-counted request and is not extended by later ones.
+**[S]** Rate limits in this specification are **fixed-window**: the window opens at
+the first counted request and is not extended by later ones. That holds wherever one
+is stated — the vault fetch limit of [Keys](04-keys.md) included.
 
-**[S]** A refused request still counts, except where an existence check runs first
-(the challenge route, above).
+**[S]** A refused request still counts, except where an existence check runs first —
+the challenge route above, and that same vault fetch.
 
 **[S]** `retry_after_seconds` is the remaining lifetime of the current window,
 rounded up; with no window open, the full window length.

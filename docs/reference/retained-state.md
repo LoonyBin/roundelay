@@ -6,9 +6,10 @@ implementation keeps is its own business.
 
 | Facts | Required by |
 |---|---|
-| **Per op** — envelope bytes; transport position; Workspace; class; key epoch; op id; author; author key id; author position; reprised-by position | idempotency, chain check, epoch floor, prune cross-checks, `include_reprised` |
+| **Per op** — envelope bytes; transport position; Workspace; class; key epoch; op id; author; author key id; author position; reprised-by position; **envelope hash, from the moment the bytes are dropped** | idempotency, chain check, epoch floor, prune cross-checks, `include_reprised`, `prune_target_attestation_mismatch` once the bytes are gone |
 | **Uniqueness** — `(workspace, author, op_id)` and `(workspace, author, author_seq)` | idempotency and the author chain; **enforced by storage, not application code** |
-| **Per device** — id; control signing key; content signing key; sealing key; the three derived key ids | `kex_key_id_not_registered`, `author_member_mismatch`, `author_key_class_mismatch` |
+| **Per device** — id; the **registered** control signing key, content signing key and sealing key; the three derived key ids | `author_member_mismatch`, the shell record, and the interval-zero value of every row below |
+| **Per (Workspace, device, key name)** — the key and its derived id; the `amend_id` that opened the interval; start position; end position (**write-once**); several intervals per name | `member_amend` interval closure at the amend's commit, the in-force lookups (`kex_key_id_not_registered`, the auth challenge), `author_key_class_mismatch` against **every** id held for a class, `amend_id_already_used` |
 | **Per registration** — `(Workspace, device)`; member kind; **`holder_ref`, 32 opaque bytes** | the access gate, member listing, `unknown_grantee`, `no_registration` |
 | **Per Workspace** — existence and genesis position; **current Root public key** | `workspace_not_created`, certificate verification, `cert_root_pk_mismatch` |
 | **Per delegation** — `(workspace, delegation_id)`; delegate public key; start position; end position (**write-once**) | root-authority signature checks, `delegation_id_already_used`, `already_revoked` |
@@ -22,9 +23,42 @@ implementation keeps is its own business.
 | **Per extension binding** — `(Workspace, member, extension class)`; bound NAME; start position; end position (**write-once**); several intervals per key | judging `0xC0–0xFF` ops against their author's own binding at that position; **only where extensions are implemented** |
 
 **[S]** The **envelope bytes** are the one entry an accepted `hard_prune` may drop
-([The Log](../01-the-log.md)). Everything else on that row is a **tombstone** and
-survives for ever: without it, `(workspace, author, op_id)` stops refusing a
-re-append and a destroyed op can be resurrected as a new one.
+([The Log](../01-the-log.md)). Everything else on that row is the **tombstone** and
+survives for ever — **ten facts, no fewer**: transport position, Workspace, class,
+key epoch, op id, author, author key id, author position, reprised-by position, and
+the envelope hash. That enumeration and the tombstone in
+[The Log](../01-the-log.md) §7 are **one list**; a field added to either belongs in
+both.
+
+> Each is load-bearing once the bytes are gone. Without op id and author,
+> `(workspace, author, op_id)` stops refusing a re-append and a destroyed op can be
+> resurrected as a new one. Without class and reprised-by position, a repeat
+> `hard_prune` cannot be judged against `hard_prune_target_is_prune` and
+> `hard_prune_target_not_reprised`. Without the envelope hash, its attestation cannot
+> be judged at all, and a false one lands silently.
+
+**[S]** The envelope hash is materialised **at `hard_prune` time** — computed from
+the bytes about to be dropped, or carried over from the attestation check just
+performed on those same bytes, which computes the identical value. It is **never**
+taken from the payload that asked for the destruction. While the bytes are still
+held it need not be stored at all: it is a function of them, and a server may
+compute it on demand.
+
+> Taking it from the payload would make every later check circular — the first
+> `hard_prune` would get to choose what every one after it must match, which is
+> precisely the forgery the attestation exists to catch.
+
+**[S]** A device's **registered** keys are its keys in every Workspace until a
+`member_amend` lands there, and an amend is **per Workspace**
+([Authority](../03-authority.md#member_amend)). The two rows are therefore not
+alternatives: the per-device row is what a shell has and where every interval starts,
+and the per-Workspace rows are what an envelope at a position is resolved against.
+
+**[S]** The **auth challenge** is the one check that reads across them. It has no
+Workspace in its route, so it accepts the control key in force in **any** Workspace
+the device is registered in — which is a union over the rows above, materialised as
+the route evaluates, and authoritative for nobody
+([Authority §1](../03-authority.md#1-the-central-idea-permission-lives-in-the-log)).
 
 **[S]** Quota, allowance and billing state are **not on this list**. Nothing derives
 from them, no op records them, and a replacement rebuilt from the log is complete
@@ -60,6 +94,34 @@ demand.
 > records that produced it — and `rotate_epoch_conflict`'s `expected_from_epoch`
 > depends on it being right.
 
+**[S]** A Workspace's **control tip** — the hash of the latest accepted control op's
+payload ([Authority](../03-authority.md#the-control-chain)) — is likewise computed on
+demand. The bytes it is computed from are always there: a control op is never a prune
+target (`prune_target_is_control`), so no `hard_prune` can reach its envelope.
+
+> Same reasoning, one step further along. A stored tip is a cache of a function of the
+> log, free to drift from it, and the drift is spelled `control_chain_break` on a
+> request that was correct — or, worse the other way, a chain the server stopped
+> enforcing.
+
+**[S]** A Workspace's **role table in force at a position** — the table carried by the
+latest `role_table` op below it, or the profile's initial table where there is none
+([Authority §7](../03-authority.md#the-table-in-force-and-how-it-changes)) — is
+likewise computed on demand. The bytes are always there, for the reason the tip's are:
+a control op is never a prune target, so no `hard_prune` reaches the certificate.
+
+> A stored "current table" is a cache of a function of the log and the profile, free
+> to drift from both, and the drift is a permission the server grants or refuses on
+> its own authority — which is the one thing this layer says it cannot do. An
+> implementation that indexes it is doing what it already does for grants, and that
+> index is authoritative for nobody
+> ([Authority §1](../03-authority.md#1-the-central-idea-permission-lives-in-the-log)).
+>
+> Note what is **not** derived: the profile's *initial* table is configuration, and a
+> server refuses to start without it ([profile
+> obligations](profile-obligations.md)). Derivation begins from that row, not from
+> nothing.
+
 ## What a log replay can and cannot rebuild
 
 **[S]** These are **derivable from the log alone**, and a replacement MAY rebuild them
@@ -71,6 +133,10 @@ by replaying it:
 - every delegation, with its key and its start and end positions
 - every epoch's committed digest and rotate position, for epochs ≥ 1
 - each device's registration facts, and which Workspaces it is registered in
+- **each device's key intervals in that Workspace**, from its registration and every
+  `member_amend` since — which is why an amend is an op rather than a route
+- **the role table in force at every position**, from the profile's initial table and
+  every `role_table` op since
 - every extension binding — which member agreed to which NAME for which class, over
   which span of positions — because `ext_binding` ops are in the log, which is why
   the binding was put there rather than in configuration
