@@ -90,11 +90,11 @@ Read them in this order. Each one only depends on the ones above it.
 
 Reference material, extracted so the narrative does not carry it:
 
-- [Refusal codes](reference/refusal-codes.md) — all 117, with status, cause and whether a retry can help
+- [Refusal codes](reference/refusal-codes.md) — all 125, with status, cause and whether a retry can help
 - [Glossary](reference/glossary.md) — every term, defined once
 - [Retained state](reference/retained-state.md) — what a server must remember
 - [Profile obligations](reference/profile-obligations.md) — the eleven decisions a deployment must make
-- [Conformance](../conformance/checklist.yaml) — 194 machine-readable items
+- [Conformance](../conformance/checklist.yaml) — 250 machine-readable items
 
 ---
 
@@ -141,7 +141,7 @@ Prose in these documents comes in two kinds, and telling them apart matters.
 | **[S]** | the server | *[S] The server MUST NOT verify envelope signatures.* |
 | **[C]** | a client | *[C] A client MUST verify every envelope it pulls.* |
 | **[W]** | the wire format, so both | *[W] Hex values are lowercase.* |
-| **[P]** | the profile | *[P] The profile MUST declare a role table.* |
+| **[P]** | the profile | *[P] The profile MUST declare an initial role table.* |
 
 MUST, MUST NOT, SHOULD, MAY are used as in RFC 2119.
 
@@ -166,6 +166,9 @@ These apply in all five layers, so they are stated once here.
 Every functional route lives under a contract-version segment: `/v1/…`. Only
 `GET /health` and `GET /health/db` sit outside it, because a client must be able
 to ask what the server supports before it knows what the server supports.
+A route is never added to a version already being served — a new route ships under a
+new version — so whether a server has a route is always answered by
+`contract_versions`, never by a `404` a client has to interpret.
 [Compatibility](05-compatibility.md) explains the scheme.
 
 ### Errors
@@ -180,6 +183,10 @@ to ask what the server supports before it knows what the server supports.
 list](reference/refusal-codes.md). Extra fields are per-code. There is no second
 error shape — a client that branches on `detail.code` never meets a bare string.
 
+**[C]** A client **ignores** any member of a response it does not recognise, in a
+refusal detail as anywhere else, and never refuses the response for carrying it
+([Compatibility §4](05-compatibility.md#4-unknown-fields-are-refused)).
+
 | Status | Means |
 |---|---|
 | `200` | Success — or an idempotent repeat of something already done |
@@ -192,6 +199,7 @@ error shape — a client that branches on `detail.code` never meets a bare strin
 | `413` | Too big |
 | `422` | Well-formed JSON, invalid contents |
 | `429` | Rate limited; `retry_after_seconds` says how long |
+| `503` | The backing store is unavailable — any route may answer it; `GET /health/db` is where you ask |
 
 **[S]** `401` responses carry `WWW-Authenticate: Bearer`.
 
@@ -215,8 +223,10 @@ boolean, never a string. Ranges:
 
 | Field | Range |
 |---|---|
-| `epoch`, `from_epoch`, `to_epoch`, `key_epoch` | 0 … 2³²−1 |
-| `since`, prune `seq`, prune `author_seq`, escrow `version` | see [The Log](01-the-log.md) |
+| `epoch`, `from_epoch`, `to_epoch`, `key_epoch`, `after_epoch` | 0 … 2³²−1 |
+| `since` → [The Log](01-the-log.md) | 0 … 2⁶³−1 |
+| prune `seq`, prune `author_seq` → [The Log](01-the-log.md) | 1 … 2⁶³−1 |
+| vault `version` → [Keys](04-keys.md) | 1 … 2⁶³−1 |
 | `limit` | 1 … the server's advertised maximum |
 | HLC `wall_ms` | −2⁶³ … 2⁶³−1 |
 | HLC `counter` | 0 … 2⁶³−1 |
@@ -225,10 +235,10 @@ boolean, never a string. Ranges:
 
 | Field | Pattern |
 |---|---|
-| hex-64 (`prev_control_hash`, `envelope_hash`) | `^[0-9a-f]{64}$` |
+| hex-64 (`prev_control_hash`, `expected_prev_control_hash`, `envelope_hash`) | `^[0-9a-f]{64}$` |
 | HLC member id | `^[0-9a-f]{32}$` |
 | canonical UUID | `^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$` |
-| `member_kind`, role token | `^[a-z][a-z0-9_-]{0,31}$` |
+| `member_kind`, role token | `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`, 1–32 bytes |
 | authority (`granter`, `revoker`) | `root`, or a canonical UUID |
 
 **[S]** Timestamps the server originates are RFC 3339, `Z` offset, millisecond
@@ -246,8 +256,13 @@ browser client MAY omit CORS entirely.
 > A wildcard origin and `allow-credentials` are mutually exclusive in every
 > browser. A deployment that sets both has switched its own CORS off.
 
-**[S]** A deployment SHOULD bound total request body size and MUST document the
-refusal. The batch ceiling limits the *count* of ops, not their size.
+**[S]** A deployment SHOULD bound total request body size and MUST document the bound.
+A body over it is refused `413 request_too_large`, on any route. The batch ceiling
+limits the *count* of ops, not their size, and answers `batch_too_large` instead.
+
+> The bound is the deployment's to choose; the code is not. The vocabulary is closed,
+> so the one limit every route shares needs a name in it — otherwise each deployment
+> invents its own, and a client cannot tell "too big" from "malformed" anywhere.
 
 ### Clocks
 
@@ -269,8 +284,9 @@ breaks, no position moves. Reprising an op hides it from ordinary reads; a
 `hard_prune` op can later destroy those hidden bytes, and only those — the server
 never deletes on its own initiative, only what a signed op in the log instructed.
 
-**The server never reads content.** It reads envelope headers, and the bodies of
-exactly two op classes — the two it must act on. Nothing else, ever.
+**The server never reads content.** It reads envelope headers, and the bodies of the
+classes it must act on — the few with bit 7 set: control, prune, `ext_binding`, and
+any extension class the profile enables. Nothing else, ever.
 
 **The server verifies less than it stores.** No envelope signature check, no
 chain check. Those belong to whoever pulls.
@@ -282,7 +298,17 @@ the signed log themselves.
 **Everything fails closed.** An unknown suite, op class, control type, role,
 member kind, or request field is a refusal — never a shrug. A field that is
 permitted-and-ignored is one a future reader might start honouring, and two
-implementations disagreeing about whether it counts is a convergence bug.
+implementations disagreeing about whether it counts is a convergence bug. The one
+reservation is the `note_*` control types, advisory for ever and chained past rather
+than interpreted by a reader ([Authority](03-authority.md)) — a place kept in v1, with
+no member in it.
+
+> The direction is part of the rule. Those are all things a **caller sends**, and the
+> failure is a party acting on less than it was given. A field the **server** adds to a
+> response is ignored rather than refused ([Compatibility
+> §4](05-compatibility.md#4-unknown-fields-are-refused)) — nobody was asked to act on
+> it, and refusing the answer for saying more than expected freezes every response
+> shape at its earliest reader.
 
 **Refusal codes are protocol.** They may not be narrowed, merged, or invented
 locally. A client that meets an unfamiliar code surfaces it verbatim.
@@ -313,6 +339,8 @@ changed the system into something else:
 - retention policy, scheduled reclamation, or any deletion it decided on its own
 - holding any key that opens any envelope, wrap or vault record
 - notifications, scheduled work, or any background process at all
-- an operator surface — every route here is member-credentialed, so provisioning,
-  billing and support tooling read the deployment's own storage rather than an API
-  this specification defines
+- an operator surface — the routes here are the members' own plane: a device token,
+  or a certificate, signature or locator the caller carries, or nothing at all where
+  nothing is disclosed. None of them is an operator's, so provisioning, billing and
+  support tooling read the deployment's own storage rather than an API this
+  specification defines
