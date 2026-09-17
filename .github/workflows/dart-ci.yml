@@ -11,17 +11,29 @@ name: Dart client CI
 # Scoped to the Dart package and the vectors it checks itself against. A change
 # to `vectors/` is a change to the protocol, so it must re-run these tests: a
 # corpus the client no longer agrees with is the failure this is here to catch.
+#
+# One test reads the specification rather than a vector:
+# refusal_vocabulary_test.dart checks the library's code list against the table
+# in `docs/reference/refusal-codes.md`. That document lives on `main` and is
+# fetched per run — see spec.lock — so no path filter here can see it move. A
+# spec change that breaks that test surfaces on the next run of this workflow
+# rather than on the commit that caused it; `main`'s own spec.yml is where the
+# divergence is caught at source.
 on:
   push:
     branches: [main, dev]
     paths:
       - "clients/dart/**"
       - "vectors/**"
+      - "spec.lock"
+      - "scripts/spec-sync.sh"
       - ".github/workflows/dart-ci.yml"
   pull_request:
     paths:
       - "clients/dart/**"
       - "vectors/**"
+      - "spec.lock"
+      - "scripts/spec-sync.sh"
       - ".github/workflows/dart-ci.yml"
 
 permissions:
@@ -42,6 +54,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+
+      # From the repository root, overriding this job's default: spec.lock and
+      # the script it drives are there, and the files land at paths relative to
+      # it. refusal_vocabulary_test.dart reads one of them.
+      - name: fetch the spec from main
+        working-directory: .
+        run: make spec
 
       - uses: dart-lang/setup-dart@v1
         with:

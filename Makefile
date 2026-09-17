@@ -1,6 +1,19 @@
-.PHONY: all test vectors codes generate conformance check fmt pg-up pg-down pg-test
+.PHONY: all test vectors codes generate conformance check fmt pg-up pg-down pg-test spec spec-present
 
 all: check
+
+# Fetch the specification this branch implements. It lives on `main` and is not
+# committed here — see spec.lock. Run it once after cloning, and again whenever
+# you want the current spec.
+spec:
+	@scripts/spec-sync.sh
+
+# Assert it is in the tree, without going to the network. Targets that read the
+# spec depend on this rather than on `spec` itself, so that `make check` stays
+# runnable offline and does not silently change what it is checking against
+# halfway through a debugging session.
+spec-present:
+	@scripts/spec-sync.sh --check
 
 # Regenerate the frozen vectors. A diff here is a change to the
 # cross-implementation contract — review it as one.
@@ -8,18 +21,18 @@ vectors:
 	go run ./internal/vectorgen ./vectors
 
 # Regenerate the refusal vocabulary from the document. A diff here means the
-# code list moved, which is a protocol change.
-codes:
+# code list moved on `main`, which is a protocol change.
+codes: spec-present
 	go run ./internal/codegen/codesgen
 	gofmt -w codes/codes.go
 
 generate: vectors codes
 
 # The lints the README says a conforming release runs.
-conformance:
+conformance: spec-present
 	go run ./internal/conformance/cmd/conformance-lint
 
-test:
+test: spec-present
 	go test ./...
 
 # The Postgres store's tests need a database. Without ROUNDELAY_TEST_DSN they
@@ -43,8 +56,9 @@ pg-test:
 fmt:
 	gofmt -l -w .
 
-# What CI runs.
-check:
+# What CI runs. CI runs `make spec` first; locally, `spec-present` tells you to
+# when you have not.
+check: spec-present
 	gofmt -l . | tee /dev/stderr | (! read)
 	go vet ./...
 	go test ./...
